@@ -1,0 +1,38 @@
+# Editable greeting message bank for RemindMe.
+# Blank lines and lines starting with # are ignored.
+
+[morning]
+Good morning, have we had coffee yet? ☕
+Good morning! Tiny steps still count 🌤️
+Morning! Let's keep it easy and steady 🌱
+Good morning! You've got this 💪
+Morning reset: breathe, then begin 🌬️
+Morning check-in: water first 💧
+Morning focus: one thing at a time 🎯
+Morning mood: calm progress is still progress 🍃
+Morning plan: start small, win early ✨
+Morning reminder: be kind to yourself today 🌅
+
+[afternoon]
+Good afternoon! Hydration check 💧
+Good afternoon! One reminder at a time 📌
+Good afternoon! Small wins still win 🏁
+Good afternoon! Keep it simple and doable 🌼
+Afternoon checkpoint: how is your energy? 🔋
+Afternoon reset: quick stretch break? 🤸
+Afternoon focus: pick the next tiny step 🎯
+Afternoon momentum: progress over perfection ✨
+Afternoon reminder: do not forget to blink 😄
+Afternoon vibes: steady pace, steady results 🚶
+
+[evening]
+Good evening! Time to wrap up gently 🌙
+Good evening! You made it through today 🌃
+Good evening! Rest counts too 🛌
+Good evening! You did enough for today ✅
+Evening check-in: what matters next? 📝
+Evening reset: light tasks only 🕯️
+Evening focus: finish strong, not fast 🧹
+Evening reminder: let tomorrow handle tomorrow 🌙
+Evening mood: quiet progress still counts 🌌
+Evening wind-down: slow is smooth 😌
