@@ -106,18 +106,24 @@ const QStringList &greetingPool(GreetingPeriod period)
 
     static const auto pickPath = []() -> QString
     {
-        const QStringList candidates = {
-            QDir::current().filePath(kGreetingFileName),
-            QCoreApplication::applicationDirPath() + "/" + kGreetingFileName,
-            QCoreApplication::applicationDirPath() + "/../" + kGreetingFileName,
-        };
+        const QString fileName = QString::fromLatin1(kGreetingFileName);
+        QStringList candidates;
+        candidates.push_back(QDir::current().filePath(fileName));
+
+        QDir probe(QCoreApplication::applicationDirPath());
+        for (int i = 0; i < 4; ++i)
+        {
+            candidates.push_back(probe.filePath(fileName));
+            if (!probe.cdUp())
+                break;
+        }
 
         for (const QString &path : candidates)
         {
             if (QFile::exists(path))
                 return path;
         }
-        return QCoreApplication::applicationDirPath() + "/" + kGreetingFileName;
+        return QCoreApplication::applicationDirPath() + "/" + fileName;
     };
 
     static const auto writeGreetingFile = [](const QString &path, const std::array<QStringList, 3> &pools)

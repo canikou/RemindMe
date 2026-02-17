@@ -5,7 +5,7 @@
       "name": "Debug (gdb) - CMake",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/app.exe",
+      "program": "${workspaceFolder}/build/RemindMe.exe",
       "args": [],
       "cwd": "${workspaceFolder}",
       "externalConsole": true,

@@ -56,7 +56,7 @@ target_link_libraries(app PRIVATE Qt6::Widgets)
 
 # Nice warnings
 if (MSVC)
-    target_compile_options(app PRIVATE /W4)
+    target_compile_options(app PRIVATE /W4 /utf-8)
 else()
-    target_compile_options(app PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(app PRIVATE -Wall -Wextra -Wpedantic -finput-charset=UTF-8 -fexec-charset=UTF-8)
 endif()
