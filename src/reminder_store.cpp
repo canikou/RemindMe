@@ -1,4 +1,4 @@
-#include "ReminderStore.h"
+#include "remindme/reminder_store.hpp"
 #include <QStandardPaths>
 #include <QDir>
 #include <QFile>
@@ -8,6 +8,9 @@
 #include <QJsonArray>
 #include <QTimeZone>
 #include <algorithm>
+
+namespace remindme
+{
 
 namespace
 {
@@ -171,4 +174,6 @@ void ReminderStore::sortSoonestFirst()
 {
     std::sort(m_items.begin(), m_items.end(), [](const Reminder &a, const Reminder &b)
               { return a.nextLocal < b.nextLocal; });
+}
+
 }

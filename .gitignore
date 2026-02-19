@@ -1,56 +1,27 @@
-# --- Build output (CMake/Ninja) ---
+# Build outputs
 build/
-build-*/
-cmake-build-*/
 dist/
-release/
-
-# If you ever create zips in-repo
+out/
+CMakeUserPresets.json
+cpp-mntchocoluvr/
 *.zip
 
-# --- Ninja/CMake noise (in case generated outside build dirs) ---
-.ninja_deps
-.ninja_log
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-compile_commands.json
-*.cmake
+# Keep shared VS Code config, ignore everything else in .vscode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/cpp.code-snippets
 
-# --- Qt autogen (in case generated outside build dirs) ---
-*_autogen/
-moc_*.cpp
-moc_*.h
-ui_*.h
-qrc_*.cpp
-
-# --- IDE / editor ---
-.vscode/*.log
-.vscode/ipch/
-.idea/
+# Other IDE metadata
 .vs/
+.idea/
 
-# --- Compiled artifacts ---
-*.exe
-*.dll
-*.pdb
-*.obj
-*.o
-*.a
-*.dll.a
-*.ilk
-
-# --- User/machine-specific ---
+# Common junk
 *.user
-*.userprefs
-CMakeUserPresets.json
-
-# --- Local helper outputs (repo snapshots) ---
-repo_tree.txt
-biggest_files.txt
-git_status.txt
-git_ignored.txt
-
-# --- OS junk ---
-Thumbs.db
+*.log
+*.tmp
+*.swp
+*.swo
 .DS_Store
+Thumbs.db

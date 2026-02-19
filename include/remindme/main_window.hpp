@@ -8,8 +8,13 @@
 #include <QListWidget>
 #include <QSet>
 #include <QHash>
+#include <QSystemTrayIcon>
 
-#include "ReminderStore.h"
+#include "remindme/reminder_store.hpp"
+
+class QAction;
+namespace remindme
+{
 
 class MainWindow : public QMainWindow
 {
@@ -27,6 +32,10 @@ private slots:
     void onAddClicked();
 
 private:
+    void setupSystemTray();
+    void showFromTray();
+    void quitFromTray();
+
     void refreshUI();
     void refreshCompletedPreview();
     void updateGreetingMessage();
@@ -44,6 +53,7 @@ private:
 
     void handlePopupOk(const QString &id);
     void handlePopupSnooze(const QString &id);
+    void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);
 
     ReminderStore store;
 
@@ -65,4 +75,13 @@ private:
     QHash<QString, QLabel *> countdownLabels;
     int currentGreetingPeriod = -1;
     bool saveErrorShown = false;
+    bool quittingFromTray = false;
+    bool trayHintShown = false;
+
+    QSystemTrayIcon *trayIcon = nullptr;
+    class QMenu *trayMenu = nullptr;
+    QAction *showAction = nullptr;
+    QAction *quitAction = nullptr;
 };
+
+}

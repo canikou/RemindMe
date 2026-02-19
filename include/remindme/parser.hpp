@@ -2,6 +2,9 @@
 #include <QString>
 #include <QTime>
 
+namespace remindme
+{
+
 struct ParseResult
 {
     bool ok = false;
@@ -25,3 +28,5 @@ public:
     static bool parseTimeOfDay(const QString &s, QTime &outTime, QString &outError);
     static bool parseRepeatIntervalToSeconds(const QString &s, int &outSeconds, QString &outError);
 };
+
+}

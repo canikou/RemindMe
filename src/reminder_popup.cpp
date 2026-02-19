@@ -1,13 +1,17 @@
-#include "ReminderPopup.h"
-#include "TimeFormat.h"
-#include "WinFocus.h"
+#include "remindme/reminder_popup.hpp"
+#include "remindme/time_format.hpp"
+#include "remindme/win_focus.hpp"
 
+#include <QCloseEvent>
 #include <QDateTime>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
+
+namespace remindme
+{
 
 namespace
 {
@@ -99,14 +103,26 @@ void ReminderPopup::onTick()
 
 void ReminderPopup::onOk()
 {
+    m_actionHandled = true;
     emit okPressed(m_id);
     close();
 }
 
 void ReminderPopup::onSnooze()
 {
+    m_actionHandled = true;
     emit snoozePressed(m_id);
     close();
+}
+
+void ReminderPopup::closeEvent(QCloseEvent *event)
+{
+    if (!m_actionHandled)
+    {
+        m_actionHandled = true;
+        emit okPressed(m_id);
+    }
+    QDialog::closeEvent(event);
 }
 
 void ReminderPopup::updateWindowTitle(qint64 overdueSeconds)
@@ -116,4 +132,6 @@ void ReminderPopup::updateWindowTitle(qint64 overdueSeconds)
         title += " | " + TimeFormat::formatOverdueText(overdueSeconds);
 
     setWindowTitle(title);
+}
+
 }

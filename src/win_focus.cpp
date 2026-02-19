@@ -1,8 +1,11 @@
-#include "WinFocus.h"
+#include "remindme/win_focus.hpp"
 
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
+
+namespace remindme
+{
 
 namespace WinFocus
 {
@@ -43,3 +46,5 @@ void bringToFront(QWidget *w)
 }
 
 } // namespace WinFocus
+
+}

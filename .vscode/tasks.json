@@ -2,36 +2,59 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "CMake: configure",
+      "label": "check (conventions)",
       "type": "shell",
-      "command": "cmake",
-      "args": [
-        "-S",
-        "${workspaceFolder}",
-        "-B",
-        "${workspaceFolder}/build",
-        "-G",
-        "Ninja",
-        "-DCMAKE_PREFIX_PATH=C:/msys64/ucrt64"
-      ],
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "scripts/check-conventions.ps1"],
       "problemMatcher": []
     },
     {
-      "label": "CMake: build",
+      "label": "configure (debug)",
       "type": "shell",
       "command": "cmake",
-      "args": [
-        "--build",
-        "${workspaceFolder}/build"
-      ],
-      "dependsOn": "CMake: configure",
+      "args": ["--preset", "debug"],
+      "problemMatcher": []
+    },
+    {
+      "label": "build (debug)",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "debug", "--parallel"],
       "group": {
         "kind": "build",
         "isDefault": true
       },
-      "problemMatcher": [
-        "$gcc"
-      ]
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "configure (release)",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--preset", "release"],
+      "problemMatcher": []
+    },
+    {
+      "label": "build (release)",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "release", "--parallel"],
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "test (debug)",
+      "type": "shell",
+      "command": "ctest",
+      "args": ["--preset", "debug"],
+      "dependsOn": ["check (conventions)", "build (debug)"],
+      "problemMatcher": []
+    },
+    {
+      "label": "test (release)",
+      "type": "shell",
+      "command": "ctest",
+      "args": ["--preset", "release"],
+      "dependsOn": ["check (conventions)", "build (release)"],
+      "problemMatcher": []
     }
   ]
 }

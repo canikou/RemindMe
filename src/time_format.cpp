@@ -1,4 +1,7 @@
-#include "TimeFormat.h"
+#include "remindme/time_format.hpp"
+
+namespace remindme
+{
 
 namespace
 {
@@ -74,4 +77,6 @@ QString TimeFormat::formatIntervalText(qint64 seconds)
     }
 
     return (seconds == 1) ? "1 second" : QString("%1 seconds").arg(seconds);
+}
+
 }

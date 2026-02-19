@@ -1,7 +1,10 @@
-#include "Parser.h"
+#include "remindme/parser.hpp"
 
 #include <QRegularExpression>
 #include <climits>
+
+namespace remindme
+{
 
 namespace
 {
@@ -302,4 +305,6 @@ bool Parser::parseRepeatIntervalToSeconds(const QString &s, int &outSeconds, QSt
 
     outSeconds = seconds;
     return true;
+}
+
 }

@@ -1,16 +1,16 @@
 #include <QApplication>
 #include <QIcon>
-#include "AppInfo.h"
-#include "MainWindow.h"
+#include "remindme/app_info.hpp"
+#include "remindme/main_window.hpp"
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
-    app.setApplicationName(AppInfo::kAppName);
-    app.setApplicationVersion(AppInfo::kAppVersion);
+    app.setApplicationName(remindme::AppInfo::kAppName);
+    app.setApplicationVersion(remindme::AppInfo::kAppVersion);
     app.setWindowIcon(QIcon(":/icons/app.png"));
 
-    MainWindow w;
+    remindme::MainWindow w;
     w.setWindowIcon(QIcon(":/icons/app.png"));
     w.show();
 

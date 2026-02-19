@@ -1,7 +1,10 @@
 #pragma once
-#include "Reminder.h"
+#include "remindme/reminder.hpp"
 #include <QVector>
 #include <QString>
+
+namespace remindme
+{
 
 class ReminderStore
 {
@@ -22,3 +25,5 @@ private:
     QVector<Reminder> m_items;
     QVector<CompletedReminder> m_completedItems;
 };
+
+}

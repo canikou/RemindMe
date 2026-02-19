@@ -1,62 +1,159 @@
-cmake_minimum_required(VERSION 3.20)
+# SPDX-License-Identifier: MIT
 
-set(PROJECT_NAME RemindMe)
-project(${PROJECT_NAME} LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.21)
+
+# ---- Edit this ONE variable per project ----
+set(APP_NAME "RemindMe")
+# --------------------------------------------
+project(${APP_NAME} VERSION 1.1.0 LANGUAGES CXX)
+
+include(CTest)
+include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-
-# ---- Qt (Widgets UI) ----
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
-
-# Needed for Q_OBJECT in headers (MainWindow.h)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTORCC ON)
 
-# ---- Sources ----
-file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/src/*.cpp"
-)
+option(ENABLE_WARNINGS "Enable strict compiler warnings" ON)
+option(ENABLE_SANITIZERS "Enable sanitizers for Debug builds (GCC/Clang)" ON)
+option(ENABLE_IPO "Enable interprocedural optimization in Release builds" ON)
 
-# (Optional but nice for VS Code / IDE browsing)
-file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/include/*.h"
-    "${CMAKE_SOURCE_DIR}/include/*.hpp"
-)
-
-set(RESOURCE_FILES
-    "${CMAKE_SOURCE_DIR}/resources/app.qrc"
-)
-
-if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/resources/icons/app.ico")
-    list(APPEND RESOURCE_FILES "${CMAKE_SOURCE_DIR}/resources/app.rc")
-endif()
-
-# ---- Target ----
 if (WIN32)
-    add_executable(app WIN32 ${SOURCES} ${HEADERS} ${RESOURCE_FILES})
+    set(CONVENTIONS_POWERSHELL "powershell")
 else()
-    add_executable(app ${SOURCES} ${HEADERS} ${RESOURCE_FILES})
+    find_program(CONVENTIONS_POWERSHELL NAMES pwsh powershell)
 endif()
 
-if (WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/resources/icons/app.ico")
-    target_sources(app PRIVATE "${CMAKE_SOURCE_DIR}/resources/app.rc")
+if (CONVENTIONS_POWERSHELL)
+    add_custom_target(conventions
+        COMMAND ${CONVENTIONS_POWERSHELL} -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-conventions.ps1"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Running project convention checks"
+        VERBATIM
+    )
 endif()
 
-set_target_properties(app PROPERTIES OUTPUT_NAME "RemindMe")
+set(CORE_TARGET "${APP_NAME}Core")
 
+file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+)
+list(REMOVE_ITEM CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 
-target_include_directories(app PRIVATE "${CMAKE_SOURCE_DIR}/include")
-target_link_libraries(app PRIVATE Qt6::Widgets)
+file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+)
 
-# Nice warnings
-if (MSVC)
-    target_compile_options(app PRIVATE /W4 /utf-8)
+add_library(${CORE_TARGET}
+    ${CORE_SOURCES}
+    ${HEADERS}
+)
+target_include_directories(${CORE_TARGET} PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_features(${CORE_TARGET} PUBLIC cxx_std_20)
+
+find_package(Qt6 REQUIRED COMPONENTS Widgets)
+target_link_libraries(${CORE_TARGET} PUBLIC Qt6::Widgets)
+
+if (ENABLE_WARNINGS)
+    if (MSVC)
+        target_compile_options(${CORE_TARGET} PRIVATE /W4 /permissive- /Zc:__cplusplus /utf-8)
+    elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${CORE_TARGET} PRIVATE -Wall -Wextra -Wpedantic -finput-charset=UTF-8 -fexec-charset=UTF-8)
+    endif()
+endif()
+
+set(SANITIZERS_ACTIVE OFF)
+if (ENABLE_SANITIZERS AND CMAKE_BUILD_TYPE STREQUAL "Debug" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT WIN32)
+    set(SANITIZERS_ACTIVE ON)
+    target_compile_options(${CORE_TARGET} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(${CORE_TARGET} PRIVATE -fsanitize=address,undefined)
+endif()
+
+add_executable(${APP_NAME} WIN32
+    src/main.cpp
+)
+target_link_libraries(${APP_NAME} PRIVATE ${CORE_TARGET})
+target_compile_features(${APP_NAME} PRIVATE cxx_std_20)
+
+# Stable dev binary name: Debug/Dev builds -> app(.exe), Release -> APP_NAME
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    set_target_properties(${APP_NAME} PROPERTIES OUTPUT_NAME "${APP_NAME}")
 else()
-    target_compile_options(app PRIVATE -Wall -Wextra -Wpedantic -finput-charset=UTF-8 -fexec-charset=UTF-8)
+    set_target_properties(${APP_NAME} PROPERTIES OUTPUT_NAME "app")
 endif()
+
+if (WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc")
+    target_sources(${APP_NAME} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc"
+    )
+endif()
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.qrc")
+    target_sources(${APP_NAME} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.qrc"
+    )
+endif()
+
+if (ENABLE_WARNINGS)
+    if (MSVC)
+        target_compile_options(${APP_NAME} PRIVATE /W4 /permissive- /Zc:__cplusplus /utf-8)
+    elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${APP_NAME} PRIVATE -Wall -Wextra -Wpedantic -finput-charset=UTF-8 -fexec-charset=UTF-8)
+    endif()
+endif()
+
+if (SANITIZERS_ACTIVE)
+    target_compile_options(${APP_NAME} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(${APP_NAME} PRIVATE -fsanitize=address,undefined)
+endif()
+
+if (ENABLE_IPO AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error)
+    if (ipo_supported)
+        set_property(TARGET ${CORE_TARGET} ${APP_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+endif()
+
+if (BUILD_TESTING)
+    add_executable(${APP_NAME}_tests
+        tests/core_tests.cpp
+    )
+    target_link_libraries(${APP_NAME}_tests PRIVATE ${CORE_TARGET})
+    target_compile_features(${APP_NAME}_tests PRIVATE cxx_std_20)
+
+    if (ENABLE_WARNINGS)
+        if (MSVC)
+            target_compile_options(${APP_NAME}_tests PRIVATE /W4 /permissive- /Zc:__cplusplus /utf-8)
+        elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${APP_NAME}_tests PRIVATE -Wall -Wextra -Wpedantic -finput-charset=UTF-8 -fexec-charset=UTF-8)
+        endif()
+    endif()
+
+    if (SANITIZERS_ACTIVE)
+        target_compile_options(${APP_NAME}_tests PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(${APP_NAME}_tests PRIVATE -fsanitize=address,undefined)
+    endif()
+
+    if (TARGET conventions)
+        add_dependencies(${APP_NAME}_tests conventions)
+    endif()
+
+    add_test(NAME ${APP_NAME}.core COMMAND ${APP_NAME}_tests)
+endif()
+
+install(TARGETS ${CORE_TARGET} ${APP_NAME}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)

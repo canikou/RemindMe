@@ -1,10 +1,10 @@
-#include "MainWindow.h"
+#include "remindme/main_window.hpp"
 
-#include "AppInfo.h"
-#include "Parser.h"
-#include "ReminderPopup.h"
-#include "TimeFormat.h"
-#include "WinFocus.h"
+#include "remindme/app_info.hpp"
+#include "remindme/parser.hpp"
+#include "remindme/reminder_popup.hpp"
+#include "remindme/time_format.hpp"
+#include "remindme/win_focus.hpp"
 
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -18,12 +18,14 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QMenu>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QRandomGenerator>
 #include <QStringConverter>
+#include <QSystemTrayIcon>
 #include <QTime>
 #include <QTimeEdit>
 #include <QTextStream>
@@ -33,6 +35,9 @@
 
 #include <algorithm>
 #include <array>
+
+namespace remindme
+{
 
 namespace
 {
@@ -515,6 +520,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     if (!store.load(err))
         QMessageBox::warning(this, "Load error", err);
 
+    setupSystemTray();
+
     updateGreetingMessage();
     nowLabel->setText(TimeFormat::formatClockTime(QDateTime::currentDateTime()));
     triggerDueReminders();
@@ -528,8 +535,69 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 void MainWindow::closeEvent(QCloseEvent *e)
 {
+    if (!quittingFromTray && trayIcon && trayIcon->isVisible())
+    {
+        saveStoreBestEffort();
+        hide();
+        e->ignore();
+
+        if (!trayHintShown)
+        {
+            trayIcon->showMessage(
+                AppInfo::kAppName,
+                "RemindMe is still running in the system tray.",
+                QSystemTrayIcon::Information,
+                3000);
+            trayHintShown = true;
+        }
+        return;
+    }
+
     saveStoreBestEffort();
     QMainWindow::closeEvent(e);
+}
+
+void MainWindow::setupSystemTray()
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+        return;
+
+    trayIcon = new QSystemTrayIcon(windowIcon(), this);
+    trayIcon->setToolTip(AppInfo::kAppName);
+
+    trayMenu = new QMenu(this);
+    showAction = trayMenu->addAction("Open RemindMe");
+    quitAction = trayMenu->addAction("Quit");
+
+    connect(showAction, &QAction::triggered, this, &MainWindow::showFromTray);
+    connect(quitAction, &QAction::triggered, this, &MainWindow::quitFromTray);
+    connect(trayIcon, &QSystemTrayIcon::activated, this, &MainWindow::onTrayIconActivated);
+
+    trayIcon->setContextMenu(trayMenu);
+    trayIcon->show();
+}
+
+void MainWindow::showFromTray()
+{
+    showNormal();
+    WinFocus::bringToFront(this);
+}
+
+void MainWindow::quitFromTray()
+{
+    quittingFromTray = true;
+    saveStoreBestEffort();
+
+    if (trayIcon)
+        trayIcon->hide();
+
+    close();
+}
+
+void MainWindow::onTrayIconActivated(QSystemTrayIcon::ActivationReason reason)
+{
+    if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick)
+        showFromTray();
 }
 
 void MainWindow::updateGreetingMessage()
@@ -1035,9 +1103,10 @@ void MainWindow::triggerDueReminders()
             continue;
 
         activePopups.insert(reminder.id);
-        WinFocus::bringToFront(this);
+        if (isVisible())
+            WinFocus::bringToFront(this);
 
-        auto *popup = new ReminderPopup(reminder.id, reminder.title, reminder.nextLocal, this);
+        auto *popup = new ReminderPopup(reminder.id, reminder.title, reminder.nextLocal, nullptr);
         popup->setAttribute(Qt::WA_DeleteOnClose);
         connect(popup, &ReminderPopup::okPressed, this, &MainWindow::handlePopupOk);
         connect(popup, &ReminderPopup::snoozePressed, this, &MainWindow::handlePopupSnooze);
@@ -1111,5 +1180,7 @@ void MainWindow::commitReminderChanges()
     store.sortSoonestFirst();
     saveStoreBestEffort();
     refreshUI();
+}
+
 }
 

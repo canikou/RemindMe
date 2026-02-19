@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.0 - 2026-02-19
+
+### Added
+
+- System tray runtime mode: closing the main window now hides to tray while reminders/timers continue running.
+- Reminder popup close button (`X`) now follows the same completion path as `OK`.
+- Template-style repository workflow and standards:
+  - CMake presets and VS Code task/launch alignment
+  - CI workflow and repository policy files
+  - Convention checks (`scripts/check-conventions.ps1`) and CMake `conventions` target
+  - Baseline test target with CTest integration
+
+### Changed
+
+- Migrated project layout to standardized structure:
+  - headers moved to `include/remindme/*.hpp`
+  - source files renamed to `snake_case`
+  - project symbols scoped under `namespace remindme`
+- Updated README organization to prioritize user-facing usage, with development details moved lower.
+
 ## 1.0.0 - 2026-02-17
 
 ### Initial Release
