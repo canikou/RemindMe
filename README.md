@@ -73,7 +73,7 @@ Use presets first:
 2. Build debug:
    - `cmake --build --preset debug --parallel`
 3. Run tests:
-   - `ctest --preset debug`
+   - `ctest --preset debug` 
 
 Convention gate:
 

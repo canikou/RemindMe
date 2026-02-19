@@ -16,6 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Optional: keep conventions check (runs with Windows PowerShell)
       - name: Check Conventions
         shell: pwsh
         run: ./scripts/check-conventions.ps1
@@ -25,28 +26,31 @@ jobs:
         with:
           msystem: UCRT64
           update: true
+          # IMPORTANT: install MSYS2 into C:\msys64 so your presets (C:/msys64/ucrt64) match CI
+          location: C:\msys64
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-qt6-base
 
+      # Run build steps inside the MSYS2 UCRT64 environment
       - name: Configure (Debug)
-        shell: pwsh
+        shell: msys2 {0}
         run: cmake --preset debug
 
       - name: Build (Debug)
-        shell: pwsh
+        shell: msys2 {0}
         run: cmake --build --preset debug --parallel
 
       - name: Test (Debug)
-        shell: pwsh
-        run: ctest --preset debug
+        shell: msys2 {0}
+        run: ctest --preset debug --output-on-failure
 
       - name: Configure (Release)
-        shell: pwsh
+        shell: msys2 {0}
         run: cmake --preset release
 
       - name: Build (Release)
-        shell: pwsh
+        shell: msys2 {0}
         run: cmake --build --preset release --parallel
