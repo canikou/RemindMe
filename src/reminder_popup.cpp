@@ -22,6 +22,7 @@ constexpr int kOverdueDisplayThresholdSeconds = 60;
 ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLocal, QWidget *parent)
     : QDialog(parent), m_id(std::move(reminderId)), m_title(std::move(title)), m_dueLocal(std::move(dueLocal))
 {
+    setWindowFlag(Qt::WindowStaysOnTopHint, true);
     setWindowTitle(m_title);
     setModal(false);
     resize(640, 360);

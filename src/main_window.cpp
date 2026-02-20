@@ -7,6 +7,7 @@
 #include "remindme/win_focus.hpp"
 
 #include <QCheckBox>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -17,11 +18,14 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QMenu>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QRandomGenerator>
 #include <QStringConverter>
@@ -35,6 +39,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 
 namespace remindme
 {
@@ -282,6 +287,130 @@ QString repeatingInfoText(const Reminder &reminder)
     return QString("At %1 daily").arg(reminder.timeOfDay.toString("h:mm AP"));
 }
 
+QString subtaskProgressText(const Reminder &reminder)
+{
+    if (reminder.checklistItems.isEmpty())
+        return QString();
+
+    return QString("Subtasks %1/%2 done")
+        .arg(reminder.checkedChecklistCount())
+        .arg(reminder.checklistItems.size());
+}
+
+Reminder *findReminderById(QVector<Reminder> &items, const QString &id)
+{
+    for (Reminder &item : items)
+    {
+        if (item.id == id)
+            return &item;
+    }
+    return nullptr;
+}
+
+const Reminder *findReminderById(const QVector<Reminder> &items, const QString &id)
+{
+    for (const Reminder &item : items)
+    {
+        if (item.id == id)
+            return &item;
+    }
+    return nullptr;
+}
+
+bool showChecklistDialog(QWidget *parent, const QString &reminderTitle, Reminder &reminder)
+{
+    if (!reminder.repeating)
+        return false;
+
+    QDialog dialog(parent);
+    dialog.setWindowTitle(QString("Subtask - %1").arg(reminderTitle));
+    dialog.setModal(true);
+    dialog.resize(520, 420);
+
+    auto *root = new QVBoxLayout(&dialog);
+    auto *hint = new QLabel("Subtask progress resets each time this repeating reminder starts a new period.");
+    hint->setWordWrap(true);
+    hint->setStyleSheet("font-size: 12px; color: #bdbdbd;");
+    root->addWidget(hint);
+
+    auto *checklist = new QListWidget(&dialog);
+    checklist->setSelectionMode(QAbstractItemView::SingleSelection);
+    root->addWidget(checklist, 1);
+
+    auto addChecklistRow = [&](const QString &text, bool checked)
+    {
+        const QString trimmedText = text.trimmed();
+        if (trimmedText.isEmpty())
+            return;
+
+        auto *item = new QListWidgetItem(trimmedText);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+        item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+        checklist->addItem(item);
+    };
+
+    for (const Reminder::ChecklistItem &item : reminder.checklistItems)
+        addChecklistRow(item.text, item.checked);
+
+    auto *addRow = new QHBoxLayout();
+    auto *newItemEdit = new QLineEdit(&dialog);
+    newItemEdit->setPlaceholderText("Add subtask item");
+    auto *addBtn = new QPushButton("Add", &dialog);
+    auto *removeBtn = new QPushButton("Remove Selected", &dialog);
+    addRow->addWidget(newItemEdit, 1);
+    addRow->addWidget(addBtn);
+    addRow->addWidget(removeBtn);
+    root->addLayout(addRow);
+
+    QObject::connect(addBtn, &QPushButton::clicked, &dialog, [&]()
+                     {
+                         const QString text = newItemEdit->text().trimmed();
+                         if (text.isEmpty())
+                             return;
+
+                         addChecklistRow(text, false);
+                         newItemEdit->clear();
+                         newItemEdit->setFocus(); });
+
+    QObject::connect(newItemEdit, &QLineEdit::returnPressed, addBtn, &QPushButton::click);
+    QObject::connect(removeBtn, &QPushButton::clicked, &dialog, [&]()
+                     {
+                         QListWidgetItem *selected = checklist->currentItem();
+                         if (!selected)
+                             return;
+                         delete checklist->takeItem(checklist->row(selected)); });
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    root->addWidget(buttons);
+
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    QVector<Reminder::ChecklistItem> updatedChecklist;
+    updatedChecklist.reserve(checklist->count());
+    for (int i = 0; i < checklist->count(); ++i)
+    {
+        QListWidgetItem *item = checklist->item(i);
+        if (!item)
+            continue;
+
+        const QString text = item->text().trimmed();
+        if (text.isEmpty())
+            continue;
+
+        Reminder::ChecklistItem updated;
+        updated.text = text;
+        updated.checked = (item->checkState() == Qt::Checked);
+        updatedChecklist.push_back(updated);
+    }
+
+    reminder.checklistItems = updatedChecklist;
+    reminder.enforceChecklistConstraints();
+    return true;
+}
+
 QString completedPatternText(const CompletedReminder &completed)
 {
     if (completed.scheduleType == ScheduleType::Relative)
@@ -299,6 +428,45 @@ QString completedTitleText(const CompletedReminder &completed)
         return completed.title;
 
     return QString("%1  (x%2)").arg(completed.title).arg(completed.completionCount);
+}
+
+QWidget *createCompletedEntryRow(
+    QWidget *parent,
+    const CompletedReminder &entry,
+    const std::function<void()> &onAddAgain)
+{
+    auto *row = new QWidget(parent);
+    auto *root = new QHBoxLayout(row);
+    root->setContentsMargins(12, 8, 12, 8);
+    root->setSpacing(12);
+
+    auto *textBox = new QVBoxLayout();
+    textBox->setContentsMargins(0, 0, 0, 0);
+    textBox->setSpacing(2);
+
+    auto *title = new QLabel(completedTitleText(entry));
+    title->setStyleSheet("font-size: 13px; font-weight: 700;");
+
+    auto *meta = new QLabel(
+        QString("%1 | %2")
+            .arg(entry.completedAt.toString("M/d/yyyy h:mm AP"), completedPatternText(entry)));
+    meta->setStyleSheet("font-size: 12px; color: #9f9f9f;");
+
+    textBox->addWidget(title);
+    textBox->addWidget(meta);
+
+    auto *textWrap = new QWidget(row);
+    textWrap->setLayout(textBox);
+
+    auto *addAgainBtn = new QPushButton("Add Again", row);
+    addAgainBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
+    QObject::connect(addAgainBtn, &QPushButton::clicked, row, [onAddAgain]()
+                     { onAddAgain(); });
+
+    root->addWidget(textWrap, 1);
+    root->addWidget(addAgainBtn);
+
+    return row;
 }
 
 bool isSameCompletedPattern(const CompletedReminder &completed, const Reminder &reminder)
@@ -509,12 +677,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     auto *h = new QHBoxLayout();
     input = new QLineEdit();
     input->setPlaceholderText(R"(e.g. "Drink water in 45m" or "Stand up at 7:00AM every day")");
+    auto *exportBtn = new QPushButton("Export");
+    auto *importBtn = new QPushButton("Import");
+    exportBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
+    importBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
     h->addWidget(input, 1);
+    h->addWidget(exportBtn);
+    h->addWidget(importBtn);
     v->addLayout(h);
 
     setCentralWidget(central);
 
     connect(input, &QLineEdit::returnPressed, this, &MainWindow::onAddClicked);
+    connect(exportBtn, &QPushButton::clicked, this, &MainWindow::onExportClicked);
+    connect(importBtn, &QPushButton::clicked, this, &MainWindow::onImportClicked);
 
     QString err;
     if (!store.load(err))
@@ -524,13 +700,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     updateGreetingMessage();
     nowLabel->setText(TimeFormat::formatClockTime(QDateTime::currentDateTime()));
-    triggerDueReminders();
     refreshUI();
 
     tickTimer = new QTimer(this);
     tickTimer->setInterval(kTickIntervalMs);
     connect(tickTimer, &QTimer::timeout, this, &MainWindow::onTick);
     tickTimer->start();
+
+    QTimer::singleShot(0, this, [this]()
+                       { triggerDueReminders(); });
 }
 
 void MainWindow::closeEvent(QCloseEvent *e)
@@ -685,6 +863,53 @@ void MainWindow::onAddClicked()
     input->clear();
 }
 
+void MainWindow::onExportClicked()
+{
+    QString err;
+    const QString shareString = store.exportShareString(err);
+    if (shareString.isEmpty())
+    {
+        QMessageBox::warning(this, "Export error", err.isEmpty() ? "Failed to create export string." : err);
+        return;
+    }
+
+    if (QGuiApplication::clipboard())
+        QGuiApplication::clipboard()->setText(shareString);
+
+    QMessageBox info(this);
+    info.setWindowTitle("Export Reminders");
+    info.setIcon(QMessageBox::Information);
+    info.setText("Export string copied to clipboard.");
+    info.setInformativeText("Send this string to another RemindMe instance and use Import there.");
+    info.setDetailedText(shareString);
+    info.exec();
+}
+
+void MainWindow::onImportClicked()
+{
+    bool accepted = false;
+    const QString shareString = QInputDialog::getMultiLineText(
+        this,
+        "Import Reminders",
+        "Paste export string:",
+        QString(),
+        &accepted);
+
+    if (!accepted)
+        return;
+
+    int importedCount = 0;
+    QString err;
+    if (!store.importShareString(shareString, importedCount, err))
+    {
+        QMessageBox::warning(this, "Import error", err);
+        return;
+    }
+
+    commitReminderChanges();
+    QMessageBox::information(this, "Import complete", QString("Imported %1 reminder(s).").arg(importedCount));
+}
+
 void MainWindow::deleteReminderById(const QString &id)
 {
     auto &items = store.items();
@@ -697,8 +922,12 @@ void MainWindow::deleteReminderById(const QString &id)
         break;
     }
 
-    activePopups.remove(id);
+    queuedPopupIds.removeAll(id);
+    if (activePopupId == id)
+        activePopupId.clear();
+
     commitReminderChanges();
+    showNextQueuedPopup();
 }
 
 void MainWindow::editReminderById(const QString &id)
@@ -768,9 +997,29 @@ void MainWindow::editReminderById(const QString &id)
             reminder.intervalSeconds = 0;
         }
 
+        reminder.enforceChecklistConstraints();
+        queuedPopupIds.removeAll(id);
         commitReminderChanges();
         return;
     }
+}
+
+void MainWindow::editChecklistById(const QString &id)
+{
+    Reminder *reminder = findReminderById(store.items(), id);
+    if (!reminder)
+        return;
+
+    if (!reminder->repeating)
+    {
+        QMessageBox::warning(this, "Subtask unavailable", "Subtasks are only available on repeating reminders.");
+        return;
+    }
+
+    if (!showChecklistDialog(this, reminder->title, *reminder))
+        return;
+
+    commitReminderChanges();
 }
 
 void MainWindow::refreshUI()
@@ -817,12 +1066,85 @@ void MainWindow::refreshUI()
             auto *due = new QLabel(TimeFormat::formatDueDateTime(reminder.nextLocal));
             due->setStyleSheet("font-size: 13px; color: #bfbfbf;");
 
-            auto *extra = new QLabel(repeatingInfoText(reminder));
+            const QString extraText = repeatingInfoText(reminder);
+
+            auto *extra = new QLabel(extraText);
             extra->setStyleSheet("font-size: 13px; color: #8f8f8f;");
 
             infoBox->addWidget(title);
             infoBox->addWidget(due);
             infoBox->addWidget(extra);
+
+            if (!reminder.checklistItems.isEmpty())
+            {
+                auto *progressRow = new QHBoxLayout();
+                progressRow->setContentsMargins(0, 0, 0, 0);
+                progressRow->setSpacing(10);
+
+                auto *progressLabel = new QLabel(subtaskProgressText(reminder));
+                progressLabel->setStyleSheet("font-size: 12px; color: #a8d6ff;");
+
+                auto *progress = new QProgressBar();
+                progress->setRange(0, reminder.checklistItems.size());
+                progress->setValue(reminder.checkedChecklistCount());
+                progress->setTextVisible(false);
+                progress->setFixedHeight(10);
+                progress->setStyleSheet(R"(
+                    QProgressBar {
+                        border: 1px solid #3a3a3a;
+                        background: #232323;
+                        border-radius: 4px;
+                    }
+                    QProgressBar::chunk {
+                        background: #4ca3ff;
+                    }
+                )");
+
+                progressRow->addWidget(progressLabel);
+                progressRow->addWidget(progress, 1);
+                infoBox->addLayout(progressRow);
+
+                bool hasPendingSubtasks = false;
+                for (int subtaskIndex = 0; subtaskIndex < reminder.checklistItems.size(); ++subtaskIndex)
+                {
+                    const Reminder::ChecklistItem &subtask = reminder.checklistItems[subtaskIndex];
+                    const QString subtaskText = subtask.text.trimmed();
+                    if (subtask.checked || subtaskText.isEmpty())
+                        continue;
+
+                    if (!hasPendingSubtasks)
+                    {
+                        auto *subtaskHeader = new QLabel("Subtasks");
+                        subtaskHeader->setStyleSheet("font-size: 12px; font-weight: 700; color: #d2d2d2;");
+                        infoBox->addWidget(subtaskHeader);
+                        hasPendingSubtasks = true;
+                    }
+
+                    auto *subtaskCheck = new QCheckBox(subtaskText);
+                    subtaskCheck->setStyleSheet("font-size: 12px; color: #c0c0c0;");
+                    subtaskCheck->setChecked(false);
+                    connect(subtaskCheck, &QCheckBox::clicked, this, [this, rid = reminder.id, subtaskIndex](bool checked)
+                            {
+                                Reminder *target = findReminderById(store.items(), rid);
+                                if (!target)
+                                    return;
+                                if (subtaskIndex < 0 || subtaskIndex >= target->checklistItems.size())
+                                    return;
+                                if (target->checklistItems[subtaskIndex].checked == checked)
+                                    return;
+
+                                target->checklistItems[subtaskIndex].checked = checked;
+                                commitReminderChanges(); });
+                    infoBox->addWidget(subtaskCheck);
+                }
+
+                if (!hasPendingSubtasks)
+                {
+                    auto *allDoneLabel = new QLabel("All subtasks done for this period.");
+                    allDoneLabel->setStyleSheet("font-size: 12px; color: #8f8f8f;");
+                    infoBox->addWidget(allDoneLabel);
+                }
+            }
 
             auto *infoWrap = new QWidget();
             infoWrap->setLayout(infoBox);
@@ -839,6 +1161,13 @@ void MainWindow::refreshUI()
             connect(editBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { editReminderById(rid); });
             connect(delBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { deleteReminderById(rid); });
 
+            if (reminder.repeating)
+            {
+                auto *checklistBtn = new QPushButton("Subtask");
+                checklistBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
+                connect(checklistBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { editChecklistById(rid); });
+                actions->addWidget(checklistBtn);
+            }
             actions->addWidget(editBtn);
             actions->addWidget(delBtn);
 
@@ -877,37 +1206,11 @@ void MainWindow::refreshCompletedPreview()
     for (int i = completed.size() - 1; i >= start; --i)
     {
         const CompletedReminder &entry = completed[i];
-
-        auto *row = new QWidget();
-        auto *root = new QHBoxLayout(row);
-        root->setContentsMargins(12, 8, 12, 8);
-        root->setSpacing(12);
-
-        auto *textBox = new QVBoxLayout();
-        textBox->setContentsMargins(0, 0, 0, 0);
-        textBox->setSpacing(2);
-
-        auto *title = new QLabel(completedTitleText(entry));
-        title->setStyleSheet("font-size: 13px; font-weight: 700;");
-
-        auto *meta = new QLabel(
-            QString("%1 | %2")
-                .arg(entry.completedAt.toString("M/d/yyyy h:mm AP"), completedPatternText(entry)));
-        meta->setStyleSheet("font-size: 12px; color: #9f9f9f;");
-
-        textBox->addWidget(title);
-        textBox->addWidget(meta);
-
-        auto *textWrap = new QWidget();
-        textWrap->setLayout(textBox);
-
-        auto *addAgainBtn = new QPushButton("Add Again");
-        addAgainBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
-        connect(addAgainBtn, &QPushButton::clicked, this, [this, completedId = entry.id]()
-                { reAddCompletedReminder(completedId); });
-
-        root->addWidget(textWrap, 1);
-        root->addWidget(addAgainBtn);
+        auto *row = createCompletedEntryRow(
+            completedList,
+            entry,
+            [this, completedId = entry.id]()
+            { reAddCompletedReminder(completedId); });
 
         auto *item = new QListWidgetItem();
         item->setSizeHint(QSize(0, qMax(kCompletedPreviewRowHeight, row->sizeHint().height())));
@@ -937,37 +1240,11 @@ void MainWindow::showAllCompletedDialog()
     for (int i = completed.size() - 1; i >= 0; --i)
     {
         const CompletedReminder &entry = completed[i];
-
-        auto *row = new QWidget();
-        auto *layout = new QHBoxLayout(row);
-        layout->setContentsMargins(12, 8, 12, 8);
-        layout->setSpacing(12);
-
-        auto *textBox = new QVBoxLayout();
-        textBox->setContentsMargins(0, 0, 0, 0);
-        textBox->setSpacing(2);
-
-        auto *title = new QLabel(completedTitleText(entry));
-        title->setStyleSheet("font-size: 13px; font-weight: 700;");
-
-        auto *meta = new QLabel(
-            QString("%1 | %2")
-                .arg(entry.completedAt.toString("M/d/yyyy h:mm AP"), completedPatternText(entry)));
-        meta->setStyleSheet("font-size: 12px; color: #9f9f9f;");
-
-        textBox->addWidget(title);
-        textBox->addWidget(meta);
-
-        auto *textWrap = new QWidget();
-        textWrap->setLayout(textBox);
-
-        auto *addAgainBtn = new QPushButton("Add Again");
-        addAgainBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
-        connect(addAgainBtn, &QPushButton::clicked, this, [this, completedId = entry.id]()
-                { reAddCompletedReminder(completedId); });
-
-        layout->addWidget(textWrap, 1);
-        layout->addWidget(addAgainBtn);
+        auto *row = createCompletedEntryRow(
+            allList,
+            entry,
+            [this, completedId = entry.id]()
+            { reAddCompletedReminder(completedId); });
 
         auto *item = new QListWidgetItem();
         item->setSizeHint(QSize(0, qMax(kCompletedPreviewRowHeight, row->sizeHint().height())));
@@ -1099,20 +1376,46 @@ void MainWindow::triggerDueReminders()
     {
         if (reminder.nextLocal > now)
             continue;
-        if (activePopups.contains(reminder.id))
+        if (reminder.id == activePopupId)
+            continue;
+        if (queuedPopupIds.contains(reminder.id))
             continue;
 
-        activePopups.insert(reminder.id);
-        if (isVisible())
-            WinFocus::bringToFront(this);
+        queuedPopupIds.push_back(reminder.id);
+    }
 
-        auto *popup = new ReminderPopup(reminder.id, reminder.title, reminder.nextLocal, nullptr);
+    showNextQueuedPopup();
+}
+
+void MainWindow::showNextQueuedPopup()
+{
+    if (!activePopupId.isEmpty())
+        return;
+
+    const auto &items = store.items();
+    if (items.isEmpty())
+        return;
+
+    const QDateTime now = QDateTime::currentDateTime();
+
+    while (!queuedPopupIds.isEmpty())
+    {
+        const QString reminderId = queuedPopupIds.takeFirst();
+        const Reminder *reminder = findReminderById(items, reminderId);
+        if (!reminder)
+            continue;
+        if (reminder->nextLocal > now)
+            continue;
+
+        activePopupId = reminderId;
+
+        auto *popup = new ReminderPopup(reminder->id, reminder->title, reminder->nextLocal, nullptr);
         popup->setAttribute(Qt::WA_DeleteOnClose);
         connect(popup, &ReminderPopup::okPressed, this, &MainWindow::handlePopupOk);
         connect(popup, &ReminderPopup::snoozePressed, this, &MainWindow::handlePopupSnooze);
-
         popup->show();
         WinFocus::bringToFront(popup);
+        break;
     }
 }
 
@@ -1128,8 +1431,12 @@ void MainWindow::handlePopupSnooze(const QString &id)
         break;
     }
 
-    activePopups.remove(id);
+    queuedPopupIds.removeAll(id);
+    if (activePopupId == id)
+        activePopupId.clear();
+
     commitReminderChanges();
+    showNextQueuedPopup();
 }
 
 void MainWindow::handlePopupOk(const QString &id)
@@ -1150,13 +1457,18 @@ void MainWindow::handlePopupOk(const QString &id)
         }
         else
         {
+            reminder.resetChecklist();
             rescheduleAfterAcknowledge(reminder, now);
         }
         break;
     }
 
-    activePopups.remove(id);
+    queuedPopupIds.removeAll(id);
+    if (activePopupId == id)
+        activePopupId.clear();
+
     commitReminderChanges();
+    showNextQueuedPopup();
 }
 
 void MainWindow::saveStoreBestEffort()

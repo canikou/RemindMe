@@ -1,7 +1,7 @@
 # RemindMe
 
 RemindMe is a Windows desktop reminders app built with C++20 and Qt6 Widgets.
-Current version: `v1.1.0`.
+Current version: `v1.1.1`.
 
 ## What It Does
 

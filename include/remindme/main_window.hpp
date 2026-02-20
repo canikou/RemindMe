@@ -6,8 +6,8 @@
 #include <QStackedWidget>
 #include <QTimer>
 #include <QListWidget>
-#include <QSet>
 #include <QHash>
+#include <QStringList>
 #include <QSystemTrayIcon>
 
 #include "remindme/reminder_store.hpp"
@@ -30,6 +30,8 @@ protected:
 private slots:
     void onTick();
     void onAddClicked();
+    void onExportClicked();
+    void onImportClicked();
 
 private:
     void setupSystemTray();
@@ -50,6 +52,8 @@ private:
 
     void deleteReminderById(const QString &id);
     void editReminderById(const QString &id);
+    void editChecklistById(const QString &id);
+    void showNextQueuedPopup();
 
     void handlePopupOk(const QString &id);
     void handlePopupSnooze(const QString &id);
@@ -71,7 +75,8 @@ private:
 
     QTimer *tickTimer = nullptr;
 
-    QSet<QString> activePopups;
+    QString activePopupId;
+    QStringList queuedPopupIds;
     QHash<QString, QLabel *> countdownLabels;
     int currentGreetingPeriod = -1;
     bool saveErrorShown = false;

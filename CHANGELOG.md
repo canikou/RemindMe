@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.1 - 2026-02-20
+
+### Added
+
+- Repeating reminder subtasks with per-period reset and inline quick-complete toggles in the reminder list.
+- Import/export share string flow for transferring reminders between RemindMe instances.
+- Math-expression support for relative duration input (for example `(3*10) minutes`).
+
+### Changed
+
+- Subtask progress is now shown directly on each repeating reminder row, with completed subtasks hidden from the quick preview.
+- Due reminder popups now queue sequentially to avoid opening multiple reminder dialogs at once.
+
+### Fixed
+
+- Reminder popup focus behavior on startup was improved so due popups are brought to the front more reliably.
+
 ## 1.1.0 - 2026-02-19
 
 ### Added

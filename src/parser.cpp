@@ -1,7 +1,9 @@
 #include "remindme/parser.hpp"
 
 #include <QRegularExpression>
+#include <QStringView>
 #include <climits>
+#include <limits>
 
 namespace remindme
 {
@@ -10,8 +12,7 @@ namespace
 {
 QString trimmed(const QString &s)
 {
-    QString out = s;
-    return out.trimmed();
+    return s.trimmed();
 }
 
 bool isDayKeyword(const QString &s)
@@ -39,6 +40,346 @@ bool containsSecondUnits(const QString &s)
         QRegularExpression::CaseInsensitiveOption);
     return secondRe.match(s).hasMatch();
 }
+
+const QRegularExpression &repeatDirectiveRe()
+{
+    static const QRegularExpression re(
+        R"(^(.*)\bevery\b\s+(.+)$)",
+        QRegularExpression::CaseInsensitiveOption);
+    return re;
+}
+
+const QRegularExpression &scheduleKeywordRe()
+{
+    static const QRegularExpression re(
+        R"(\b(in|at)\b)",
+        QRegularExpression::CaseInsensitiveOption);
+    return re;
+}
+
+const QRegularExpression &durationTokenRe()
+{
+    static const QRegularExpression re(
+        R"(([\d\+\-\*\/\(\)\s]+)\s*(d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)\b)");
+    return re;
+}
+
+const QRegularExpression &timeOfDayRe()
+{
+    static const QRegularExpression re(
+        R"(^(\d{1,2})(?::(\d{2}))?([AaPp][Mm])?$)");
+    return re;
+}
+
+bool checkedAdd(qlonglong lhs, qlonglong rhs, qlonglong &out)
+{
+    if ((rhs > 0 && lhs > std::numeric_limits<qlonglong>::max() - rhs) ||
+        (rhs < 0 && lhs < std::numeric_limits<qlonglong>::min() - rhs))
+    {
+        return false;
+    }
+
+    out = lhs + rhs;
+    return true;
+}
+
+bool checkedSub(qlonglong lhs, qlonglong rhs, qlonglong &out)
+{
+    if ((rhs > 0 && lhs < std::numeric_limits<qlonglong>::min() + rhs) ||
+        (rhs < 0 && lhs > std::numeric_limits<qlonglong>::max() + rhs))
+    {
+        return false;
+    }
+
+    out = lhs - rhs;
+    return true;
+}
+
+bool checkedMul(qlonglong lhs, qlonglong rhs, qlonglong &out)
+{
+    if (lhs == 0 || rhs == 0)
+    {
+        out = 0;
+        return true;
+    }
+
+    if (lhs > 0)
+    {
+        if (rhs > 0)
+        {
+            if (lhs > std::numeric_limits<qlonglong>::max() / rhs)
+                return false;
+        }
+        else
+        {
+            if (rhs < std::numeric_limits<qlonglong>::min() / lhs)
+                return false;
+        }
+    }
+    else
+    {
+        if (rhs > 0)
+        {
+            if (lhs < std::numeric_limits<qlonglong>::min() / rhs)
+                return false;
+        }
+        else
+        {
+            if (lhs != 0 && rhs < std::numeric_limits<qlonglong>::max() / lhs)
+                return false;
+        }
+    }
+
+    out = lhs * rhs;
+    return true;
+}
+
+class IntExpressionParser
+{
+public:
+    explicit IntExpressionParser(QStringView expression)
+        : m_expression(expression)
+    {
+    }
+
+    bool parse(qlonglong &outValue, QString &outError)
+    {
+        if (!parseExpression(outValue))
+        {
+            outError = m_error.isEmpty() ? "Invalid math expression." : m_error;
+            return false;
+        }
+
+        skipSpaces();
+        if (!atEnd())
+        {
+            setError(QString("Unexpected token in math expression near \"%1\".")
+                         .arg(QString(m_expression.mid(m_pos, 1))));
+            outError = m_error;
+            return false;
+        }
+
+        return true;
+    }
+
+private:
+    bool parseExpression(qlonglong &outValue)
+    {
+        if (!parseTerm(outValue))
+            return false;
+
+        while (true)
+        {
+            skipSpaces();
+            if (atEnd())
+                return true;
+
+            const QChar op = m_expression.at(m_pos);
+            if (op != '+' && op != '-')
+                return true;
+            ++m_pos;
+
+            qlonglong rhs = 0;
+            if (!parseTerm(rhs))
+                return false;
+
+            qlonglong combined = 0;
+            const bool ok = (op == '+') ? checkedAdd(outValue, rhs, combined) : checkedSub(outValue, rhs, combined);
+            if (!ok)
+            {
+                setError("Math expression overflowed.");
+                return false;
+            }
+
+            outValue = combined;
+        }
+    }
+
+    bool parseTerm(qlonglong &outValue)
+    {
+        if (!parseFactor(outValue))
+            return false;
+
+        while (true)
+        {
+            skipSpaces();
+            if (atEnd())
+                return true;
+
+            const QChar op = m_expression.at(m_pos);
+            if (op != '*' && op != '/')
+                return true;
+            ++m_pos;
+
+            qlonglong rhs = 0;
+            if (!parseFactor(rhs))
+                return false;
+
+            qlonglong combined = 0;
+            if (op == '*')
+            {
+                if (!checkedMul(outValue, rhs, combined))
+                {
+                    setError("Math expression overflowed.");
+                    return false;
+                }
+            }
+            else
+            {
+                if (rhs == 0)
+                {
+                    setError("Division by zero in math expression.");
+                    return false;
+                }
+                if (outValue % rhs != 0)
+                {
+                    setError("Math expression must resolve to a whole number.");
+                    return false;
+                }
+                combined = outValue / rhs;
+            }
+
+            outValue = combined;
+        }
+    }
+
+    bool parseFactor(qlonglong &outValue)
+    {
+        skipSpaces();
+        if (atEnd())
+        {
+            setError("Math expression ended unexpectedly.");
+            return false;
+        }
+
+        const QChar c = m_expression.at(m_pos);
+        if (c == '+' || c == '-')
+        {
+            ++m_pos;
+            if (!parseFactor(outValue))
+                return false;
+
+            if (c == '-')
+            {
+                if (outValue == std::numeric_limits<qlonglong>::min())
+                {
+                    setError("Math expression overflowed.");
+                    return false;
+                }
+                outValue = -outValue;
+            }
+            return true;
+        }
+
+        if (c == '(')
+        {
+            ++m_pos;
+            if (!parseExpression(outValue))
+                return false;
+
+            skipSpaces();
+            if (atEnd() || m_expression.at(m_pos) != ')')
+            {
+                setError("Missing ')' in math expression.");
+                return false;
+            }
+            ++m_pos;
+            return true;
+        }
+
+        return parseNumber(outValue);
+    }
+
+    bool parseNumber(qlonglong &outValue)
+    {
+        skipSpaces();
+
+        int start = m_pos;
+        while (!atEnd() && m_expression.at(m_pos).isDigit())
+            ++m_pos;
+
+        if (start == m_pos)
+        {
+            setError("Expected a number in math expression.");
+            return false;
+        }
+
+        bool ok = false;
+        const qlonglong parsed = QString(m_expression.mid(start, m_pos - start)).toLongLong(&ok);
+        if (!ok)
+        {
+            setError("Number in math expression is out of range.");
+            return false;
+        }
+
+        outValue = parsed;
+        return true;
+    }
+
+    void skipSpaces()
+    {
+        while (!atEnd() && m_expression.at(m_pos).isSpace())
+            ++m_pos;
+    }
+
+    bool atEnd() const
+    {
+        return m_pos >= m_expression.size();
+    }
+
+    void setError(const QString &message)
+    {
+        if (m_error.isEmpty())
+            m_error = message;
+    }
+
+    QStringView m_expression;
+    int m_pos = 0;
+    QString m_error;
+};
+
+bool parseDurationAmount(const QString &rawAmount, qlonglong &outAmount, QString &outError)
+{
+    const QString amount = rawAmount.trimmed();
+    if (amount.isEmpty())
+    {
+        outError = "Duration amount is empty.";
+        return false;
+    }
+
+    IntExpressionParser parser{QStringView(amount)};
+    if (!parser.parse(outAmount, outError))
+        return false;
+
+    if (outAmount <= 0)
+    {
+        outError = "Duration amounts must be > 0.";
+        return false;
+    }
+
+    return true;
+}
+
+bool parseDurationDelta(qlonglong amount, const QString &unit, qlonglong &outDelta)
+{
+    if (unit == "d" || unit == "day" || unit == "days")
+        return checkedMul(amount, 86400LL, outDelta);
+
+    if (unit == "h" || unit == "hr" || unit == "hrs" || unit == "hour" || unit == "hours")
+        return checkedMul(amount, 3600LL, outDelta);
+
+    if (unit == "m" || unit == "min" || unit == "mins" || unit == "minute" || unit == "minutes")
+        return checkedMul(amount, 60LL, outDelta);
+
+    if (unit == "s" || unit == "sec" || unit == "secs" || unit == "second" || unit == "seconds")
+    {
+        outDelta = amount;
+        return true;
+    }
+
+    outDelta = 0;
+    return true;
+}
 }
 
 ParseResult Parser::parseInput(const QString &input)
@@ -56,8 +397,7 @@ ParseResult Parser::parseInput(const QString &input)
     QString expression = s;
     QString repeatSpec;
 
-    const QRegularExpression repeatRe(R"(^(.*)\bevery\b\s+(.+)$)", QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpressionMatch repeatMatch = repeatRe.match(s);
+    const QRegularExpressionMatch repeatMatch = repeatDirectiveRe().match(s);
     if (repeatMatch.hasMatch())
     {
         expression = trimmed(repeatMatch.captured(1));
@@ -71,8 +411,7 @@ ParseResult Parser::parseInput(const QString &input)
         }
     }
 
-    QRegularExpression re(R"(\b(in|at)\b)", QRegularExpression::CaseInsensitiveOption);
-    QRegularExpressionMatchIterator it = re.globalMatch(expression);
+    QRegularExpressionMatchIterator it = scheduleKeywordRe().globalMatch(expression);
 
     int lastPos = -1;
     int lastLen = 0;
@@ -163,28 +502,28 @@ bool Parser::parseDurationToSeconds(const QString &s, int &outSeconds, QString &
     x.replace(",", " ");
     x.replace("and", " ");
 
-    QRegularExpression token(
-        R"((\d+)\s*(d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)\b)");
+    QRegularExpressionMatchIterator it = durationTokenRe().globalMatch(x);
 
-    QRegularExpressionMatchIterator it = token.globalMatch(x);
-
-    long long total = 0;
+    qlonglong total = 0;
     int matches = 0;
 
     while (it.hasNext())
     {
         const QRegularExpressionMatch m = it.next();
-        const long long n = m.captured(1).toLongLong();
+        qlonglong n = 0;
+        if (!parseDurationAmount(m.captured(1), n, outError))
+            return false;
+
         const QString u = m.captured(2);
 
-        if (u == "d" || u == "day" || u == "days")
-            total += n * 86400LL;
-        else if (u == "h" || u == "hr" || u == "hrs" || u == "hour" || u == "hours")
-            total += n * 3600LL;
-        else if (u == "m" || u == "min" || u == "mins" || u == "minute" || u == "minutes")
-            total += n * 60LL;
-        else if (u == "s" || u == "sec" || u == "secs" || u == "second" || u == "seconds")
-            total += n;
+        qlonglong delta = 0;
+        parseDurationDelta(n, u, delta);
+
+        if (!checkedAdd(total, delta, total))
+        {
+            outError = "Duration is too large.";
+            return false;
+        }
 
         ++matches;
     }
@@ -214,8 +553,7 @@ bool Parser::parseTimeOfDay(const QString &s, QTime &outTime, QString &outError)
     QString x = s.trimmed();
     x.replace(" ", "");
 
-    QRegularExpression re(R"(^(\d{1,2})(?::(\d{2}))?([AaPp][Mm])?$)");
-    const QRegularExpressionMatch m = re.match(x);
+    const QRegularExpressionMatch m = timeOfDayRe().match(x);
 
     if (!m.hasMatch())
     {
