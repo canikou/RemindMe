@@ -27,6 +27,7 @@ struct Reminder
 
     // For "at ..."
     QTime timeOfDay; // used for daily repeating (and display)
+    int repeatWeekdaysMask = 0; // bit mask for Monday..Sunday when repeating at a specific day
 
     bool repeating = false;
 
@@ -69,6 +70,7 @@ struct CompletedReminder
     ScheduleType scheduleType = ScheduleType::Relative;
     int intervalSeconds = 0;
     QTime timeOfDay;
+    int repeatWeekdaysMask = 0;
     QDateTime completedAt;
     int completionCount = 1;
 };

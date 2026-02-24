@@ -1,4 +1,5 @@
 #include "remindme/parser.hpp"
+#include "remindme/weekday_utils.hpp"
 
 #include <QRegularExpression>
 #include <QStringView>
@@ -39,6 +40,28 @@ bool containsSecondUnits(const QString &s)
         R"(\b(s|sec|secs|second|seconds)\b)",
         QRegularExpression::CaseInsensitiveOption);
     return secondRe.match(s).hasMatch();
+}
+
+enum class RepeatWeekdayParseResult
+{
+    NotWeekdaySpec,
+    Parsed,
+    Error
+};
+
+RepeatWeekdayParseResult tryParseRepeatWeekdayMask(const QString &repeatSpec, int &outMask, QString &outError)
+{
+    static const QRegularExpression weekdayHintRe(
+        R"(\b(mon(day)?s?|tue(s|sday)?s?|wed(nesday)?s?|thu(r|rs|rsday)?s?|fri(day)?s?|sat(urday)?s?|sun(day)?s?|weekday(s)?|weekend(s)?)\b)",
+        QRegularExpression::CaseInsensitiveOption);
+
+    if (!weekdayHintRe.match(repeatSpec).hasMatch())
+        return RepeatWeekdayParseResult::NotWeekdaySpec;
+
+    if (!WeekdayUtils::parseWeekdayMaskSpec(repeatSpec, outMask, outError))
+        return RepeatWeekdayParseResult::Error;
+
+    return RepeatWeekdayParseResult::Parsed;
 }
 
 const QRegularExpression &repeatDirectiveRe()
@@ -479,17 +502,43 @@ ParseResult Parser::parseInput(const QString &input)
 
     if (!repeatSpec.isEmpty())
     {
-        int repeatSeconds = 0;
-        QString err;
-        if (!parseRepeatIntervalToSeconds(repeatSpec, repeatSeconds, err))
+        int repeatWeekdayMask = 0;
+        QString weekdayError;
+        const RepeatWeekdayParseResult weekdayResult =
+            tryParseRepeatWeekdayMask(repeatSpec, repeatWeekdayMask, weekdayError);
+
+        if (weekdayResult == RepeatWeekdayParseResult::Parsed)
+        {
+            if (r.isRelative)
+            {
+                r.ok = false;
+                r.error = "Weekday repeat is only supported with \"at\" reminders.";
+                return r;
+            }
+
+            r.hasRepeatDirective = true;
+            r.repeatWeekdaysMask = repeatWeekdayMask;
+        }
+        else if (weekdayResult == RepeatWeekdayParseResult::Error)
         {
             r.ok = false;
-            r.error = err;
+            r.error = weekdayError;
             return r;
         }
+        else
+        {
+            int repeatSeconds = 0;
+            QString err;
+            if (!parseRepeatIntervalToSeconds(repeatSpec, repeatSeconds, err))
+            {
+                r.ok = false;
+                r.error = err;
+                return r;
+            }
 
-        r.hasRepeatDirective = true;
-        r.repeatIntervalSeconds = repeatSeconds;
+            r.hasRepeatDirective = true;
+            r.repeatIntervalSeconds = repeatSeconds;
+        }
     }
 
     r.ok = true;

@@ -9,6 +9,9 @@ namespace remindme
 class ReminderStore
 {
 public:
+    explicit ReminderStore(QString storagePathOverride = {},
+                           QString legacyStoragePathOverride = {});
+
     bool load(QString &outError);
     bool save(QString &outError) const;
     QString exportShareString(QString &outError) const;
@@ -22,8 +25,11 @@ public:
     void sortSoonestFirst();
 
     QString storagePath() const;
+    QString legacyStoragePath() const;
 
 private:
+    QString m_storagePathOverride;
+    QString m_legacyStoragePathOverride;
     QVector<Reminder> m_items;
     QVector<CompletedReminder> m_completedItems;
 };

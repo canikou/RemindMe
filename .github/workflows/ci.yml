@@ -9,15 +9,18 @@ permissions:
   contents: read
 
 jobs:
-  build-and-test:
+  windows-msys2:
+    name: Windows (MSYS2 UCRT64)
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Optional: keep conventions check (runs with Windows PowerShell)
-      - name: Check Conventions
+      - name: Check conventions
         shell: pwsh
         run: ./scripts/check-conventions.ps1
 
@@ -26,7 +29,6 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          # IMPORTANT: install MSYS2 into C:\msys64 so your presets (C:/msys64/ucrt64) match CI
           location: C:\msys64
           install: >-
             mingw-w64-ucrt-x86_64-gcc
@@ -34,23 +36,20 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-qt6-base
 
-      # Run build steps inside the MSYS2 UCRT64 environment
-      - name: Configure (Debug)
-        shell: msys2 {0}
-        run: cmake --preset debug
+      - name: Configure (CI Debug)
+        run: cmake --preset ci-debug
 
-      - name: Build (Debug)
-        shell: msys2 {0}
-        run: cmake --build --preset debug --parallel
+      - name: Build (CI Debug)
+        run: cmake --build --preset ci-debug --parallel
 
-      - name: Test (Debug)
-        shell: msys2 {0}
-        run: ctest --preset debug --output-on-failure
+      - name: Test (CI Debug)
+        run: ctest --preset ci-debug --output-on-failure
 
-      - name: Configure (Release)
-        shell: msys2 {0}
-        run: cmake --preset release
+      - name: Configure (CI Release)
+        run: cmake --preset ci-release
 
-      - name: Build (Release)
-        shell: msys2 {0}
-        run: cmake --build --preset release --parallel
+      - name: Build (CI Release)
+        run: cmake --build --preset ci-release --parallel
+
+      - name: Test (CI Release)
+        run: ctest --preset ci-release --output-on-failure

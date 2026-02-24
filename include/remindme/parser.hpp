@@ -18,6 +18,7 @@ struct ParseResult
 
     bool hasRepeatDirective = false;
     int repeatIntervalSeconds = 0;
+    int repeatWeekdaysMask = 0;
 };
 
 class Parser

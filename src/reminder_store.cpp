@@ -1,4 +1,5 @@
 #include "remindme/reminder_store.hpp"
+#include "remindme/weekday_utils.hpp"
 
 #include <QByteArray>
 #include <QStandardPaths>
@@ -12,6 +13,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <utility>
 
 namespace remindme
 {
@@ -22,6 +24,8 @@ constexpr int kStorageVersion = 4;
 constexpr int kShareVersion = 1;
 constexpr int kMaxCompletedItems = 50;
 constexpr const char *kSharePrefix = "RM1:";
+constexpr const char *kStorageFileName = "reminders.json";
+constexpr const char *kDocumentsStorageFolderName = "RemindMe";
 
 QJsonArray checklistItemsToJson(const Reminder &reminder)
 {
@@ -70,6 +74,7 @@ QJsonObject reminderToJson(const Reminder &reminder)
     object["schedule"] = (reminder.scheduleType == ScheduleType::AtTimeOfDay) ? "at_time" : "relative";
     object["interval_seconds"] = reminder.intervalSeconds;
     object["time_of_day"] = reminder.timeOfDay.isValid() ? reminder.timeOfDay.toString("HH:mm") : "";
+    object["repeat_weekdays_mask"] = WeekdayUtils::normalizeMask(reminder.repeatWeekdaysMask);
     object["checklist_items"] = checklistItemsToJson(reminder);
     return object;
 }
@@ -97,6 +102,8 @@ bool reminderFromJson(const QJsonObject &object, Reminder &outReminder, bool req
     if (!timeOfDay.isEmpty())
         reminder.timeOfDay = QTime::fromString(timeOfDay, "HH:mm");
 
+    reminder.repeatWeekdaysMask = WeekdayUtils::normalizeMask(object.value("repeat_weekdays_mask").toInt(0));
+
     checklistItemsFromJson(object.value("checklist_items").toArray(), reminder);
     reminder.enforceChecklistConstraints();
 
@@ -115,6 +122,7 @@ QJsonObject completedReminderToJson(const CompletedReminder &completed)
     object["schedule"] = (completed.scheduleType == ScheduleType::AtTimeOfDay) ? "at_time" : "relative";
     object["interval_seconds"] = completed.intervalSeconds;
     object["time_of_day"] = completed.timeOfDay.isValid() ? completed.timeOfDay.toString("HH:mm") : "";
+    object["repeat_weekdays_mask"] = WeekdayUtils::normalizeMask(completed.repeatWeekdaysMask);
     object["completed_epoch"] = static_cast<double>(completed.completedAt.toSecsSinceEpoch());
     object["completion_count"] = completed.completionCount;
     return object;
@@ -137,6 +145,8 @@ bool completedReminderFromJson(const QJsonObject &object, CompletedReminder &out
     const QString timeOfDay = object.value("time_of_day").toString();
     if (!timeOfDay.isEmpty())
         completed.timeOfDay = QTime::fromString(timeOfDay, "HH:mm");
+
+    completed.repeatWeekdaysMask = WeekdayUtils::normalizeMask(object.value("repeat_weekdays_mask").toInt(0));
 
     const qint64 completedEpoch = object.value("completed_epoch").toVariant().toLongLong();
     completed.completedAt = QDateTime::fromSecsSinceEpoch(completedEpoch, QTimeZone::LocalTime);
@@ -186,12 +196,74 @@ bool decodeSharePayload(const QString &shareString, QJsonObject &outRoot, QStrin
     outRoot = document.object();
     return true;
 }
+
+QString defaultLegacyStoragePath()
+{
+    const QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    return QDir(appDataDir).filePath(QString::fromLatin1(kStorageFileName));
+}
+
+QString defaultStoragePath()
+{
+    const QString documentsDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (!documentsDir.isEmpty())
+    {
+        return QDir(documentsDir)
+            .filePath(QString::fromLatin1(kDocumentsStorageFolderName) + "/" + QString::fromLatin1(kStorageFileName));
+    }
+
+    return defaultLegacyStoragePath();
+}
+
+bool migrateLegacyStorageIfNeeded(const QString &legacyPath, const QString &newPath, QString &outError)
+{
+    outError.clear();
+    if (legacyPath.isEmpty() || newPath.isEmpty())
+        return true;
+
+    if (legacyPath == newPath)
+        return true;
+
+    if (QFile::exists(newPath))
+        return true;
+
+    if (!QFile::exists(legacyPath))
+        return true;
+
+    if (!QDir().mkpath(QFileInfo(newPath).absolutePath()))
+    {
+        outError = "Failed to create destination folder for reminders migration.";
+        return false;
+    }
+
+    if (QFile::copy(legacyPath, newPath))
+        return true;
+
+    outError = "Failed to migrate reminders data to the Documents folder.";
+    return false;
+}
+}
+
+ReminderStore::ReminderStore(QString storagePathOverride, QString legacyStoragePathOverride)
+    : m_storagePathOverride(std::move(storagePathOverride)),
+      m_legacyStoragePathOverride(std::move(legacyStoragePathOverride))
+{
 }
 
 QString ReminderStore::storagePath() const
 {
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    return QDir(dir).filePath("reminders.json");
+    if (!m_storagePathOverride.trimmed().isEmpty())
+        return m_storagePathOverride;
+
+    return defaultStoragePath();
+}
+
+QString ReminderStore::legacyStoragePath() const
+{
+    if (!m_legacyStoragePathOverride.trimmed().isEmpty())
+        return m_legacyStoragePathOverride;
+
+    return defaultLegacyStoragePath();
 }
 
 bool ReminderStore::load(QString &outError)
@@ -199,7 +271,11 @@ bool ReminderStore::load(QString &outError)
     m_items.clear();
     m_completedItems.clear();
 
-    QFile f(storagePath());
+    const QString path = storagePath();
+    if (!migrateLegacyStorageIfNeeded(legacyStoragePath(), path, outError))
+        return false;
+
+    QFile f(path);
     if (!f.exists())
         return true; // first run is fine
 
