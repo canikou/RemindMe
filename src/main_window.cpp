@@ -4,6 +4,7 @@
 #include "remindme/parser.hpp"
 #include "remindme/reminder_popup.hpp"
 #include "remindme/time_format.hpp"
+#include "remindme/update_utils.hpp"
 #include "remindme/weekday_utils.hpp"
 #include "remindme/win_focus.hpp"
 
@@ -12,7 +13,9 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -25,23 +28,33 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMenu>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPropertyAnimation>
 #include <QProgressBar>
+#include <QProcess>
 #include <QPushButton>
 #include <QRandomGenerator>
 #include <QEasingCurve>
 #include <QScreen>
+#include <QSettings>
 #include <QStringConverter>
+#include <QStandardPaths>
 #include <QSystemTrayIcon>
 #include <QTime>
 #include <QTimeEdit>
 #include <QTextStream>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWindow>
 #include <QWidget>
@@ -87,6 +100,26 @@ constexpr int kOverlayTimerFontPixelSize = 14;
 constexpr int kOverlayTextWidthSafetyPx = 6;
 constexpr double kOverlayTitleColumnRatio = 0.65;
 constexpr const char *kGreetingFileName = "greetings.txt";
+constexpr const char *kGreetingStateMarkerFileName = ".greetings_initialized";
+constexpr int kUpdateStartupDelayMs = 2500;
+constexpr qint64 kUpdateCheckIntervalSeconds = 24 * 60 * 60;
+constexpr const char *kUpdateLastCheckUtcSettingKey = "updates/last_check_utc";
+
+bool shouldCheckForUpdatesNow()
+{
+    const QSettings settings;
+    const QDateTime lastCheckedUtc = settings.value(QString::fromLatin1(kUpdateLastCheckUtcSettingKey)).toDateTime();
+    if (!lastCheckedUtc.isValid())
+        return true;
+
+    return lastCheckedUtc.secsTo(QDateTime::currentDateTimeUtc()) >= kUpdateCheckIntervalSeconds;
+}
+
+void recordUpdateCheckNow()
+{
+    QSettings settings;
+    settings.setValue(QString::fromLatin1(kUpdateLastCheckUtcSettingKey), QDateTime::currentDateTimeUtc());
+}
 
 enum class GreetingPeriod
 {
@@ -145,9 +178,32 @@ const QStringList &greetingPool(GreetingPeriod period)
         "Evening mood: quiet progress still counts 🌌"
     };
 
-    static const auto pickPath = []() -> QString
+    static const auto preferredGreetingPath = []() -> QString
     {
         const QString fileName = QString::fromLatin1(kGreetingFileName);
+
+        const QString documentsDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        if (!documentsDir.isEmpty())
+            return QDir(documentsDir).filePath(QString::fromLatin1(AppInfo::kAppName) + "/" + fileName);
+
+        const QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        if (!appDataDir.isEmpty())
+            return QDir(appDataDir).filePath(fileName);
+
+        return QCoreApplication::applicationDirPath() + "/" + fileName;
+    };
+
+    static const auto greetingStateMarkerPath = [](const QString &greetingPath) -> QString
+    {
+        const QString markerName = QString::fromLatin1(kGreetingStateMarkerFileName);
+        return QDir(QFileInfo(greetingPath).absolutePath()).filePath(markerName);
+    };
+
+    static const auto legacyGreetingCandidates = [](const QString &preferredPath) -> QStringList
+    {
+        const QString fileName = QString::fromLatin1(kGreetingFileName);
+        const QString preferredAbsPath = QFileInfo(preferredPath).absoluteFilePath();
+
         QStringList candidates;
         candidates.push_back(QDir::current().filePath(fileName));
 
@@ -159,12 +215,27 @@ const QStringList &greetingPool(GreetingPeriod period)
                 break;
         }
 
-        for (const QString &path : candidates)
+        QStringList uniquePaths;
+        for (const QString &candidate : candidates)
         {
-            if (QFile::exists(path))
-                return path;
+            const QString absPath = QFileInfo(candidate).absoluteFilePath();
+            if (absPath == preferredAbsPath)
+                continue;
+            if (!uniquePaths.contains(absPath))
+                uniquePaths.push_back(absPath);
         }
-        return QCoreApplication::applicationDirPath() + "/" + fileName;
+
+        return uniquePaths;
+    };
+
+    static const auto ensureGreetingStateMarker = [](const QString &markerPath)
+    {
+        QDir().mkpath(QFileInfo(markerPath).absolutePath());
+
+        QFile markerFile(markerPath);
+        if (!markerFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            return;
+        markerFile.close();
     };
 
     static const auto writeGreetingFile = [](const QString &path, const std::array<QStringList, 3> &pools)
@@ -203,11 +274,47 @@ const QStringList &greetingPool(GreetingPeriod period)
             defaultEveningGreetings,
         };
 
-        const QString path = pickPath();
-        if (!QFile::exists(path))
-            writeGreetingFile(path, result);
+        const QString preferredPath = preferredGreetingPath();
+        const QString stateMarkerPath = greetingStateMarkerPath(preferredPath);
+        QString resolvedPath = preferredPath;
 
-        QFile f(path);
+        if (!QFile::exists(preferredPath))
+        {
+            if (!QFile::exists(stateMarkerPath))
+            {
+                for (const QString &legacyPath : legacyGreetingCandidates(preferredPath))
+                {
+                    if (!QFile::exists(legacyPath))
+                        continue;
+
+                    QDir().mkpath(QFileInfo(preferredPath).absolutePath());
+                    if (QFile::copy(legacyPath, preferredPath))
+                    {
+                        ensureGreetingStateMarker(stateMarkerPath);
+                        resolvedPath = preferredPath;
+                    }
+                    else
+                    {
+                        // Keep old behavior as fallback if migration copy is blocked.
+                        resolvedPath = legacyPath;
+                    }
+                    break;
+                }
+            }
+
+            if (!QFile::exists(resolvedPath))
+            {
+                writeGreetingFile(preferredPath, result);
+                ensureGreetingStateMarker(stateMarkerPath);
+                resolvedPath = preferredPath;
+            }
+        }
+        else
+        {
+            ensureGreetingStateMarker(stateMarkerPath);
+        }
+
+        QFile f(resolvedPath);
         if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
             return result;
 
@@ -1092,6 +1199,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     QTimer::singleShot(kInitialDueCheckDelayMs, this, [this]()
                        { triggerDueReminders(); });
+    QTimer::singleShot(kUpdateStartupDelayMs, this, &MainWindow::maybeCheckForUpdatesOnStartup);
 }
 
 void MainWindow::closeEvent(QCloseEvent *e)
@@ -1184,9 +1292,12 @@ void MainWindow::setupSystemTray()
 
     trayMenu = new QMenu(this);
     showAction = trayMenu->addAction("Open RemindMe");
+    checkUpdatesAction = trayMenu->addAction("Check for Updates");
+    trayMenu->addSeparator();
     quitAction = trayMenu->addAction("Quit");
 
     connect(showAction, &QAction::triggered, this, &MainWindow::showFromTray);
+    connect(checkUpdatesAction, &QAction::triggered, this, &MainWindow::onCheckUpdatesClicked);
     connect(quitAction, &QAction::triggered, this, &MainWindow::quitFromTray);
     connect(trayIcon, &QSystemTrayIcon::activated, this, &MainWindow::onTrayIconActivated);
 
@@ -1217,6 +1328,290 @@ void MainWindow::onTrayIconActivated(QSystemTrayIcon::ActivationReason reason)
 {
     if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick)
         showFromTray();
+}
+
+void MainWindow::onCheckUpdatesClicked()
+{
+    checkForUpdates(true);
+}
+
+void MainWindow::maybeCheckForUpdatesOnStartup()
+{
+    if (!shouldCheckForUpdatesNow())
+        return;
+    checkForUpdates(false);
+}
+
+void MainWindow::checkForUpdates(bool userInitiated)
+{
+    if (updateMetadataReply || updateDownloadReply)
+    {
+        if (userInitiated)
+            QMessageBox::information(this, "Update check", "An update check is already running.");
+        return;
+    }
+
+    if (!updateNetwork)
+        updateNetwork = new QNetworkAccessManager(this);
+
+    updateUserInitiatedCheck = userInitiated;
+    recordUpdateCheckNow();
+
+    QNetworkRequest request(QUrl(QString::fromLatin1(AppInfo::kLatestReleaseApiUrl)));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QString("%1/%2").arg(AppInfo::kAppName, AppInfo::kAppVersion));
+    request.setRawHeader("Accept", "application/vnd.github+json");
+    request.setTransferTimeout(15000);
+
+    updateMetadataReply = updateNetwork->get(request);
+    connect(updateMetadataReply, &QNetworkReply::finished, this, &MainWindow::handleUpdateMetadataReply);
+}
+
+void MainWindow::handleUpdateMetadataReply()
+{
+    QNetworkReply *reply = updateMetadataReply.data();
+    updateMetadataReply.clear();
+    if (!reply)
+        return;
+
+    const bool userInitiated = updateUserInitiatedCheck;
+    updateUserInitiatedCheck = false;
+
+    const QNetworkReply::NetworkError networkError = reply->error();
+    const QString networkErrorText = reply->errorString();
+    const QByteArray payload = reply->readAll();
+    reply->deleteLater();
+
+    if (networkError != QNetworkReply::NoError)
+    {
+        if (userInitiated)
+            QMessageBox::warning(this, "Update check", QString("Failed to check updates:\n%1").arg(networkErrorText));
+        return;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+    {
+        if (userInitiated)
+            QMessageBox::warning(this, "Update check", "Update metadata was invalid.");
+        return;
+    }
+
+    const QJsonObject root = document.object();
+    const QString latestTag = root.value("tag_name").toString().trimmed();
+    const QString releaseUrl = root.value("html_url").toString(QString::fromLatin1(AppInfo::kReleasesPageUrl));
+
+    if (latestTag.isEmpty())
+    {
+        if (userInitiated)
+            QMessageBox::warning(this, "Update check", "Latest release did not include a version tag.");
+        return;
+    }
+
+    if (!UpdateUtils::isRemoteVersionNewer(latestTag, QString::fromLatin1(AppInfo::kAppVersion)))
+    {
+        if (userInitiated)
+            QMessageBox::information(this, "Update check", "You're already on the latest version.");
+        return;
+    }
+
+    const UpdateUtils::UpdateAssetInfo asset = UpdateUtils::pickBestReleaseAsset(root.value("assets").toArray());
+    if (!asset.downloadUrl.isValid())
+    {
+        const QMessageBox::StandardButton open =
+            QMessageBox::question(this,
+                                  "Update available",
+                                  QString("A new version (%1) is available, but no downloadable asset was found.\n\nOpen the releases page now?")
+                                      .arg(latestTag),
+                                  QMessageBox::Yes | QMessageBox::No,
+                                  QMessageBox::Yes);
+        if (open == QMessageBox::Yes)
+            QDesktopServices::openUrl(QUrl(releaseUrl));
+        return;
+    }
+
+    QString message = QString("A new version (%1) is available.\nCurrent version: %2.\n\nDo you want to download and install it now?")
+                          .arg(latestTag, QString::fromLatin1(AppInfo::kAppVersion));
+    if (!asset.isInstaller)
+        message += "\n\nNo installer asset was found. RemindMe can download the release package, but installation may require manual steps.";
+
+    const QMessageBox::StandardButton answer =
+        QMessageBox::question(this, "Update available", message, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    cleanupUpdateDownload(false);
+
+    const QString tempDirPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    if (tempDirPath.isEmpty())
+    {
+        QMessageBox::warning(this, "Update download", "No writable temp directory is available.");
+        return;
+    }
+
+    QDir().mkpath(tempDirPath);
+    const QString safeName = QFileInfo(asset.name).fileName();
+    updateDownloadedAssetName = safeName.isEmpty() ? QString("update-%1.bin").arg(latestTag) : safeName;
+    updateDownloadedFilePath = QDir(tempDirPath).filePath(QString("%1-%2").arg(AppInfo::kAppName, updateDownloadedAssetName));
+    updateExpectedSha256Hex = asset.sha256Hex;
+
+    QFile::remove(updateDownloadedFilePath);
+    updateDownloadFile = new QFile(updateDownloadedFilePath, this);
+    if (!updateDownloadFile->open(QIODevice::WriteOnly | QIODevice::Truncate))
+    {
+        delete updateDownloadFile;
+        updateDownloadFile = nullptr;
+        QMessageBox::warning(this, "Update download", "Failed to open local file for update download.");
+        updateDownloadedFilePath.clear();
+        updateDownloadedAssetName.clear();
+        updateExpectedSha256Hex.clear();
+        return;
+    }
+
+    QNetworkRequest downloadRequest(asset.downloadUrl);
+    downloadRequest.setHeader(QNetworkRequest::UserAgentHeader, QString("%1/%2").arg(AppInfo::kAppName, AppInfo::kAppVersion));
+    downloadRequest.setTransferTimeout(60000);
+
+    updateDownloadReply = updateNetwork->get(downloadRequest);
+    connect(updateDownloadReply, &QNetworkReply::readyRead, this, &MainWindow::handleUpdateDownloadReadyRead);
+    connect(updateDownloadReply, &QNetworkReply::finished, this, &MainWindow::handleUpdateDownloadFinished);
+}
+
+void MainWindow::handleUpdateDownloadReadyRead()
+{
+    if (!updateDownloadReply || !updateDownloadFile || !updateDownloadFile->isOpen())
+        return;
+
+    const QByteArray chunk = updateDownloadReply->readAll();
+    if (!chunk.isEmpty())
+        updateDownloadFile->write(chunk);
+}
+
+void MainWindow::handleUpdateDownloadFinished()
+{
+    QNetworkReply *reply = updateDownloadReply.data();
+    if (!reply)
+        return;
+
+    handleUpdateDownloadReadyRead();
+
+    const QNetworkReply::NetworkError networkError = reply->error();
+    const QString networkErrorText = reply->errorString();
+    reply->deleteLater();
+    updateDownloadReply.clear();
+
+    if (updateDownloadFile)
+    {
+        if (updateDownloadFile->isOpen())
+            updateDownloadFile->close();
+        delete updateDownloadFile;
+        updateDownloadFile = nullptr;
+    }
+
+    if (networkError != QNetworkReply::NoError)
+    {
+        const QString failedPath = updateDownloadedFilePath;
+        cleanupUpdateDownload(false);
+        QMessageBox::warning(this, "Update download", QString("Failed to download update:\n%1").arg(networkErrorText));
+        QFile::remove(failedPath);
+        return;
+    }
+
+    if (!updateExpectedSha256Hex.isEmpty())
+    {
+        QFile downloaded(updateDownloadedFilePath);
+        if (!downloaded.open(QIODevice::ReadOnly))
+        {
+            cleanupUpdateDownload(false);
+            QMessageBox::warning(this, "Update verification", "Downloaded update could not be reopened for verification.");
+            return;
+        }
+
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        while (!downloaded.atEnd())
+            hash.addData(downloaded.read(64 * 1024));
+
+        const QString actualHex = QString::fromLatin1(hash.result().toHex()).toLower();
+        if (actualHex != updateExpectedSha256Hex.toLower())
+        {
+            cleanupUpdateDownload(false);
+            QMessageBox::warning(this, "Update verification", "Downloaded update failed checksum verification.");
+            return;
+        }
+    }
+
+    const bool installerAsset = UpdateUtils::isInstallerAssetName(updateDownloadedAssetName);
+    if (!installerAsset)
+    {
+        QMessageBox::information(
+            this,
+            "Update downloaded",
+            QString("Downloaded the latest release package to:\n%1\n\nNo installer was detected in this asset. You can install it manually.")
+                .arg(QDir::toNativeSeparators(updateDownloadedFilePath)));
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(updateDownloadedFilePath).absolutePath()));
+        cleanupUpdateDownload(true);
+        return;
+    }
+
+    const QMessageBox::StandardButton installNow =
+        QMessageBox::question(this,
+                              "Install update",
+                              QString("Update downloaded to:\n%1\n\nInstall now? RemindMe will close.")
+                                  .arg(QDir::toNativeSeparators(updateDownloadedFilePath)),
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::Yes);
+    if (installNow != QMessageBox::Yes)
+    {
+        cleanupUpdateDownload(true);
+        return;
+    }
+
+    bool started = false;
+    const QString lowerName = updateDownloadedAssetName.toLower();
+    if (lowerName.endsWith(".msi"))
+    {
+        started = QProcess::startDetached(
+            "msiexec",
+            QStringList() << "/i" << QDir::toNativeSeparators(updateDownloadedFilePath));
+    }
+    else
+    {
+        started = QProcess::startDetached(QDir::toNativeSeparators(updateDownloadedFilePath), QStringList());
+    }
+
+    if (!started)
+    {
+        QMessageBox::warning(this, "Install update", "Failed to launch installer.");
+        cleanupUpdateDownload(true);
+        return;
+    }
+
+    cleanupUpdateDownload(true);
+    quitFromTray();
+}
+
+void MainWindow::cleanupUpdateDownload(bool keepDownloadedFile)
+{
+    if (updateDownloadReply)
+    {
+        updateDownloadReply->deleteLater();
+        updateDownloadReply.clear();
+    }
+
+    if (updateDownloadFile)
+    {
+        if (updateDownloadFile->isOpen())
+            updateDownloadFile->close();
+        delete updateDownloadFile;
+        updateDownloadFile = nullptr;
+    }
+
+    if (!keepDownloadedFile && !updateDownloadedFilePath.isEmpty())
+        QFile::remove(updateDownloadedFilePath);
+
+    updateDownloadedFilePath.clear();
+    updateDownloadedAssetName.clear();
+    updateExpectedSha256Hex.clear();
 }
 
 void MainWindow::updateGreetingMessage()

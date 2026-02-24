@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.21)
 # ---- Edit this ONE variable per project ----
 set(APP_NAME "RemindMe")
 # --------------------------------------------
-project(${APP_NAME} VERSION 1.2.1 LANGUAGES CXX)
+project(${APP_NAME} VERSION 1.2.2 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -87,13 +87,13 @@ target_compile_features(${CORE_TARGET} PUBLIC cxx_std_23)
 project_apply_default_build_options(${CORE_TARGET})
 
 if (ENABLE_QT)
-    find_package(Qt6 QUIET COMPONENTS Widgets)
+    find_package(Qt6 QUIET COMPONENTS Widgets Network)
 else()
     set(Qt6_FOUND OFF)
 endif()
 
 if (Qt6_FOUND)
-    target_link_libraries(${CORE_TARGET} PUBLIC Qt6::Widgets)
+    target_link_libraries(${CORE_TARGET} PUBLIC Qt6::Widgets Qt6::Network)
     target_compile_definitions(${CORE_TARGET} PUBLIC REMINDME_HAS_QT=1)
     message(STATUS "Qt6 found: building GUI executable (${APP_NAME}).")
 else()

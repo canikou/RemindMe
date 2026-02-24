@@ -2,6 +2,7 @@
 
 #include "remindme/parser.hpp"
 #include "remindme/reminder_store.hpp"
+#include "remindme/update_utils.hpp"
 #include "remindme/weekday_utils.hpp"
 
 #include <QDateTime>
@@ -757,6 +758,66 @@ bool testImportPlainJsonAssignsFreshIds()
            !imported.id.isEmpty() &&
            imported.id != "incoming-id";
 }
+
+bool testUpdateVersionComparison()
+{
+    return remindme::UpdateUtils::isRemoteVersionNewer("v1.2.2", "1.2.1") &&
+           remindme::UpdateUtils::isRemoteVersionNewer("1.3.0", "1.2.9") &&
+           remindme::UpdateUtils::isRemoteVersionNewer(" 2.0.0 ", "1.9.9") &&
+           !remindme::UpdateUtils::isRemoteVersionNewer("1.2.1", "1.2.1") &&
+           !remindme::UpdateUtils::isRemoteVersionNewer("1.2", "1.1.0") &&
+           !remindme::UpdateUtils::isRemoteVersionNewer("v1.2.1", "bad");
+}
+
+bool testPickBestReleaseAssetPrefersInstaller()
+{
+    QJsonArray assets;
+
+    QJsonObject zipAsset;
+    zipAsset["name"] = "RemindMe-1.2.2-windows-portable.zip";
+    zipAsset["browser_download_url"] = "https://example.com/RemindMe-1.2.2-windows-portable.zip";
+    assets.push_back(zipAsset);
+
+    QJsonObject msiAsset;
+    msiAsset["name"] = "RemindMe-1.2.2-installer.msi";
+    msiAsset["browser_download_url"] = "https://example.com/RemindMe-1.2.2-installer.msi";
+    assets.push_back(msiAsset);
+
+    QJsonObject setupAsset;
+    setupAsset["name"] = "RemindMe-1.2.2-setup.exe";
+    setupAsset["browser_download_url"] = "https://example.com/RemindMe-1.2.2-setup.exe";
+    setupAsset["digest"] = "sha256:ABCDEF1234";
+    assets.push_back(setupAsset);
+
+    const remindme::UpdateUtils::UpdateAssetInfo best = remindme::UpdateUtils::pickBestReleaseAsset(assets);
+    return best.name == "RemindMe-1.2.2-setup.exe" &&
+           best.downloadUrl == QUrl("https://example.com/RemindMe-1.2.2-setup.exe") &&
+           best.isInstaller &&
+           best.sha256Hex == "abcdef1234";
+}
+
+bool testPickBestReleaseAssetHandlesMissingFields()
+{
+    QJsonArray assets;
+
+    assets.push_back(QJsonValue("not-an-object"));
+
+    QJsonObject missingName;
+    missingName["name"] = "";
+    missingName["browser_download_url"] = "https://example.com/no-name.zip";
+    assets.push_back(missingName);
+
+    QJsonObject missingUrl;
+    missingUrl["name"] = "RemindMe-1.2.2-setup.exe";
+    missingUrl["browser_download_url"] = "";
+    assets.push_back(missingUrl);
+
+    const remindme::UpdateUtils::UpdateAssetInfo best = remindme::UpdateUtils::pickBestReleaseAsset(assets);
+    return best.name.isEmpty() &&
+           best.sha256Hex.isEmpty() &&
+           !best.downloadUrl.isValid() &&
+           !best.isInstaller;
+}
 }
 
 int main()
@@ -949,6 +1010,21 @@ int main()
     if (!testImportPlainJsonAssignsFreshIds())
     {
         std::cerr << "testImportPlainJsonAssignsFreshIds failed\n";
+        return 1;
+    }
+    if (!testUpdateVersionComparison())
+    {
+        std::cerr << "testUpdateVersionComparison failed\n";
+        return 1;
+    }
+    if (!testPickBestReleaseAssetPrefersInstaller())
+    {
+        std::cerr << "testPickBestReleaseAssetPrefersInstaller failed\n";
+        return 1;
+    }
+    if (!testPickBestReleaseAssetHandlesMissingFields())
+    {
+        std::cerr << "testPickBestReleaseAssetHandlesMissingFields failed\n";
         return 1;
     }
 

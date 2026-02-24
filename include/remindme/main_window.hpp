@@ -16,6 +16,9 @@
 #include "remindme/reminder_store.hpp"
 
 class QAction;
+class QFile;
+class QNetworkAccessManager;
+class QNetworkReply;
 class QPropertyAnimation;
 class QToolButton;
 class QVBoxLayout;
@@ -41,11 +44,18 @@ private slots:
     void onAddClicked();
     void onExportClicked();
     void onImportClicked();
+    void onCheckUpdatesClicked();
 
 private:
     void setupSystemTray();
     void showFromTray();
     void quitFromTray();
+    void maybeCheckForUpdatesOnStartup();
+    void checkForUpdates(bool userInitiated);
+    void handleUpdateMetadataReply();
+    void handleUpdateDownloadReadyRead();
+    void handleUpdateDownloadFinished();
+    void cleanupUpdateDownload(bool keepDownloadedFile);
 
     void refreshUI();
     void refreshCompletedPreview();
@@ -112,9 +122,19 @@ private:
     bool overlayDragging = false;
     QPoint overlayDragOffset;
 
+    QNetworkAccessManager *updateNetwork = nullptr;
+    QPointer<QNetworkReply> updateMetadataReply;
+    QPointer<QNetworkReply> updateDownloadReply;
+    QFile *updateDownloadFile = nullptr;
+    QString updateDownloadedFilePath;
+    QString updateDownloadedAssetName;
+    QString updateExpectedSha256Hex;
+    bool updateUserInitiatedCheck = false;
+
     QSystemTrayIcon *trayIcon = nullptr;
     class QMenu *trayMenu = nullptr;
     QAction *showAction = nullptr;
+    QAction *checkUpdatesAction = nullptr;
     QAction *quitAction = nullptr;
 };
 

@@ -1,7 +1,7 @@
 # RemindMe
 
 RemindMe is a Windows desktop reminders app built with C++23 and Qt6 Widgets.
-Current version: `v1.2.1`.
+Current version: `v1.2.2`.
 
 ## User Experience
 
@@ -17,6 +17,7 @@ Current version: `v1.2.1`.
 - Optional always-on-top compact overlay with drag support and guarded title/timer layout to avoid clipping.
 - Completed reminder history with quick re-add and a collapsible slide in/slide out preview in the main window.
 - Import/export share-string flow for moving reminders between instances.
+- Startup update checks against GitHub Releases with user-consent download and installer launch flow, prioritizing `setup.exe` assets for seamless upgrades.
 - Persistent JSON storage in Documents with automatic one-time migration from legacy app-data location.
 
 ## Input Examples
@@ -34,13 +35,17 @@ Current version: `v1.2.1`.
 
 ## User Data Storage
 
-Reminders are stored at:
+Reminders and user-editable greetings are stored in Documents:
 
 - `QStandardPaths::DocumentsLocation/RemindMe/reminders.json`
+- `QStandardPaths::DocumentsLocation/RemindMe/greetings.txt`
 
 On startup, RemindMe automatically migrates existing legacy data from:
 
 - `QStandardPaths::AppDataLocation/reminders.json`
+- legacy app-folder `greetings.txt` (when present) into Documents storage
+
+If `greetings.txt` is deleted, RemindMe regenerates a fresh default file automatically.
 
 ## Inspiration
 
@@ -111,6 +116,30 @@ Output:
 - `dist/RemindMe-<version>-windows-portable/`
 - `dist/RemindMe-<version>-windows-portable.zip`
 
+### Installer Release Packaging (Windows setup.exe)
+
+1. Build release and portable package:
+   - `cmake --preset release`
+   - `cmake --build --preset release --parallel`
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable-release.ps1`
+2. Build installer:
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-setup-release.ps1`
+
+Output:
+
+- `dist/RemindMe-<version>-setup.exe`
+
+### Auto-Update Release Contract (GitHub)
+
+RemindMe checks GitHub `releases/latest` at startup (throttled to once per day) and on tray action (`Check for Updates`).
+
+For seamless in-app auto-update behavior:
+
+- Publish with a semver tag like `v1.2.2`.
+- Attach a Windows installer asset with a filename containing `setup` or `installer` and extension `.exe` (recommended) or `.msi`.
+- Recommended asset name: `RemindMe-<version>-setup.exe`.
+- If only a portable `.zip` is attached, RemindMe can still download it, but install remains manual.
+
 ### VS Code Workflow
 
 - `Ctrl+Shift+B`: default task `build (debug)`
@@ -129,6 +158,8 @@ Output:
 - `include/remindme/`: public project headers in `snake_case` (for example `main_window.hpp`)
 - `resources/`: app resources/icons
 - `scripts/package-portable-release.ps1`: creates portable Windows release folder + zip
+- `scripts/package-setup-release.ps1`: builds a versioned Windows `setup.exe` from the staged portable package
+- `installer/RemindMe.iss`: Inno Setup installer definition used by setup packaging script
 - `tests/core_tests.cpp`: baseline tests registered with CTest
 - `.vscode/`: standardized tasks, launch, settings, snippets
 - `.github/workflows/ci.yml`: CI for debug/release build and tests

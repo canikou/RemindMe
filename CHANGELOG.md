@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+## 1.2.2 - 2026-02-24
+
+### User Experience
+
+- Custom `greetings.txt` is now preserved more safely across app updates by migrating it into Documents storage (`Documents/RemindMe/greetings.txt`) when needed.
+- If `greetings.txt` is deleted, RemindMe auto-regenerates a default greetings file so users can quickly reset from corruption/customization issues.
+- RemindMe can now check GitHub Releases for newer versions at startup and, with user consent, download and launch installer assets automatically when available.
+- Windows installer (`setup.exe`) packaging is now documented and standardized as the primary path for seamless in-app auto-updates.
+
+### Technical
+
+- Greeting-file resolution now prefers Documents storage with a legacy migration path and an initialization marker to support explicit delete-to-reset behavior.
+- Added a release-updater client flow that reads GitHub release metadata, compares semantic versions, validates optional SHA-256 digests, and supports installer launch (`.exe`/`.msi`) after download.
+- Added installer packaging assets (`installer/RemindMe.iss`, `scripts/package-setup-release.ps1`) to produce versioned `dist/RemindMe-<version>-setup.exe` artifacts for releases.
+- Extracted updater version/asset selection logic into `update_utils` and added core tests that lock in semver comparison and release-asset selection behavior.
+
 ## 1.2.1 - 2026-02-24
 
 ### User Experience
