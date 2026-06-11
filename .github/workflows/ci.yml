@@ -26,8 +26,6 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          # IMPORTANT: install MSYS2 into C:\msys64 so your presets (C:/msys64/ucrt64) match CI
-          location: C:\msys64
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake

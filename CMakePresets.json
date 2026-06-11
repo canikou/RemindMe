@@ -6,16 +6,13 @@
       "hidden": true,
       "generator": "Ninja",
       "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "C:/msys64/ucrt64",
+        "CMAKE_PREFIX_PATH": "$env{QT_ROOT};$env{MSYS2_UCRT64};$env{CMAKE_PREFIX_PATH}",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-      },
-      "environment": {
-        "PATH": "C:/msys64/ucrt64/bin;$penv{PATH}"
       }
     },
     {
       "name": "debug",
-      "displayName": "Debug (Ninja, MSYS2 UCRT64)",
+      "displayName": "Debug (Ninja, PATH toolchain)",
       "inherits": "base",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
@@ -24,7 +21,7 @@
     },
     {
       "name": "release",
-      "displayName": "Release (Ninja, MSYS2 UCRT64)",
+      "displayName": "Release (Ninja, PATH toolchain)",
       "inherits": "base",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {

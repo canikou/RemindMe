@@ -52,7 +52,7 @@ This repository follows the `cpp-mntchocoluvr` standardized layout and workflow 
 
 ### Prerequisites
 
-- Windows with MSYS2 UCRT64 at `C:/msys64/ucrt64`
+- Windows with MSYS2 UCRT64 tools available on `PATH`
 - Required packages:
 
 ```bash
@@ -63,6 +63,10 @@ pacman -S --needed \
   mingw-w64-ucrt-x86_64-qt6-base \
   mingw-w64-ucrt-x86_64-qt6-tools
 ```
+
+The shared presets are path-agnostic. If Qt is not discoverable from `PATH`, set `CMAKE_PREFIX_PATH` or add a local, untracked `CMakeUserPresets.json`.
+
+For repository maintenance, prefer the installed CLI helpers: `rg` for search, `fd` for file discovery, `jq` for JSON, and `gh` for GitHub operations.
 
 ### Standard Workflow
 
