@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixes
+
+- Portable package and `setup.exe` now bundle the MinGW runtime (`libstdc++-6.dll`, `libgcc_s_seh-1.dll`, `libwinpthread-1.dll`) and Qt's third-party DLLs (ICU, PCRE2, zlib, zstd, HarfBuzz, FreeType, ...). Previously `windeployqt` shipped only Qt modules, so the installed app failed to start with missing-DLL errors on machines without MSYS2.
+- Packaging now fails if any non-system DLL dependency is left unresolved.
+- CI now builds the portable zip and `setup.exe` on every push, silently installs the setup, and smoke-launches both with a system-only `PATH` to catch missing DLLs before release.
+
 ## 1.2.2 - 2026-02-24
 
 ### User Experience

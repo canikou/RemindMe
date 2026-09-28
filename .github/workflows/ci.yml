@@ -53,3 +53,47 @@ jobs:
 
       - name: Test (CI Release)
         run: ctest --preset ci-release --output-on-failure
+
+      # Stages the portable package from the CI release build and fails if any
+      # non-system DLL the app needs is missing from it. Runs from the MSYS2
+      # shell so windeployqt and the toolchain DLLs are on PATH.
+      - name: Package portable release
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File scripts/package-portable-release.ps1
+          -ReleaseBuildDir build/ci-release
+
+      # Launches the packaged app with a system-only PATH, like an end-user
+      # machine without MSYS2, and fails if it cannot start.
+      - name: Smoke test portable package
+        shell: pwsh
+        run: ./scripts/smoke-test-package.ps1 -PackageDir (Get-Item dist/*-windows-portable -Directory).FullName
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Package setup installer
+        shell: pwsh
+        run: ./scripts/package-setup-release.ps1
+
+      - name: Smoke test installed app
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "RemindMe-install"
+          $setup = (Get-Item dist/*-setup.exe).FullName
+          $proc = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList `
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=`"$installDir`""
+          if ($proc.ExitCode -ne 0) { throw "Installer failed with exit code $($proc.ExitCode)" }
+          ./scripts/smoke-test-package.ps1 -PackageDir $installDir
+
+      - name: Upload release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: RemindMe-windows-packages
+          path: |
+            dist/*-windows-portable.zip
+            dist/*-setup.exe

@@ -116,6 +116,11 @@ Output:
 - `dist/RemindMe-<version>-windows-portable/`
 - `dist/RemindMe-<version>-windows-portable.zip`
 
+The script bundles the MinGW runtime and every non-system DLL Qt depends on (resolved from the MSYS2 toolchain `bin` directory) and fails if any dependency is left unresolved.
+
+3. Smoke test the package (launches it with a system-only `PATH`, like a machine without MSYS2):
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-test-package.ps1 -PackageDir dist/RemindMe-<version>-windows-portable`
+
 ### Installer Release Packaging (Windows setup.exe)
 
 1. Build release and portable package:
@@ -158,11 +163,12 @@ For seamless in-app auto-update behavior:
 - `include/remindme/`: public project headers in `snake_case` (for example `main_window.hpp`)
 - `resources/`: app resources/icons
 - `scripts/package-portable-release.ps1`: creates portable Windows release folder + zip
+- `scripts/smoke-test-package.ps1`: launches a packaged/installed app with a system-only `PATH` to catch missing DLLs
 - `scripts/package-setup-release.ps1`: builds a versioned Windows `setup.exe` from the staged portable package
 - `installer/RemindMe.iss`: Inno Setup installer definition used by setup packaging script
 - `tests/core_tests.cpp`: baseline tests registered with CTest
 - `.vscode/`: standardized tasks, launch, settings, snippets
-- `.github/workflows/ci.yml`: CI for debug/release build and tests
+- `.github/workflows/ci.yml`: CI for debug/release build and tests, plus portable + `setup.exe` packaging with install smoke tests
 
 ### Naming Conventions
 
