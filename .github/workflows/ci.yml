@@ -67,7 +67,7 @@ jobs:
       # machine without MSYS2, and fails if it cannot start.
       - name: Smoke test portable package
         shell: pwsh
-        run: ./scripts/smoke-test-package.ps1 -PackageDir (Get-Item dist/*-windows-portable -Directory).FullName
+        run: ./scripts/smoke-test-package.ps1 -PackageDir (Get-ChildItem dist -Directory -Filter "*-windows-portable").FullName
 
       - name: Install Inno Setup
         shell: pwsh
