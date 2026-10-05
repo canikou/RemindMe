@@ -2,6 +2,7 @@
 #include <QString>
 #include <QDateTime>
 #include <QTime>
+#include <QVector>
 
 namespace remindme
 {
@@ -26,8 +27,40 @@ struct Reminder
 
     // For "at ..."
     QTime timeOfDay; // used for daily repeating (and display)
+    int repeatWeekdaysMask = 0; // bit mask for Monday..Sunday when repeating at a specific day
 
     bool repeating = false;
+
+    struct ChecklistItem
+    {
+        QString text;
+        bool checked = false;
+    };
+
+    QVector<ChecklistItem> checklistItems;
+
+    void resetChecklist()
+    {
+        for (ChecklistItem &item : checklistItems)
+            item.checked = false;
+    }
+
+    int checkedChecklistCount() const
+    {
+        int count = 0;
+        for (const ChecklistItem &item : checklistItems)
+        {
+            if (item.checked)
+                ++count;
+        }
+        return count;
+    }
+
+    void enforceChecklistConstraints()
+    {
+        if (!repeating)
+            checklistItems.clear();
+    }
 };
 
 struct CompletedReminder
@@ -37,6 +70,7 @@ struct CompletedReminder
     ScheduleType scheduleType = ScheduleType::Relative;
     int intervalSeconds = 0;
     QTime timeOfDay;
+    int repeatWeekdaysMask = 0;
     QDateTime completedAt;
     int completionCount = 1;
 };

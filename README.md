@@ -1,41 +1,51 @@
 # RemindMe
 
-RemindMe is a Windows desktop reminders app built with C++20 and Qt6 Widgets.
-Current version: `v1.1.0`.
+RemindMe is a Windows desktop reminders app built with C++23 and Qt6 Widgets.
+Current version: `v1.2.2`.
 
-## What It Does
+## User Experience
 
-- Multiple reminders, sorted by soonest due time
-- Text parsing for:
-  - relative reminders (`in ...`)
-  - time-of-day reminders (`at ...`)
-  - repeating directives (`every ...`)
-- Repeating and non-repeating reminders
-- Popup notifications with:
-  - `Snooze (5 min.)`
-  - `OK` acknowledge
-- Closing a reminder popup window (`X`) behaves the same as pressing `OK`
-- System tray behavior:
-  - Closing main window hides to tray
-  - Timers/reminders continue running in background
-- Edit/delete reminders
-- Completed reminder history with quick re-add
-- Persistent JSON storage via Qt standard app-data location
+- Multiple reminders sorted by soonest due time.
+- Natural-language parsing for relative reminders (`in ...`) and time-of-day reminders (`at ...`).
+- Repeat scheduling via interval syntax (`every 2 hours`) and weekday syntax (`every weekdays`, `every Mon-Fri`, `every Monday through Friday`).
+- Integer math support in duration input (for example `(3*10) minutes`).
+- Repeating reminder subtasks with progress tracking and per-cycle reset.
+- Popup notifications with `Snooze (5 min.)` and `OK`.
+- Closing a reminder popup with `X` behaves the same as pressing `OK`.
+- Single-instance guard prevents duplicate app processes.
+- System tray runtime behavior keeps timers active when the main window is closed.
+- Optional always-on-top compact overlay with drag support and guarded title/timer layout to avoid clipping.
+- Completed reminder history with quick re-add and a collapsible slide in/slide out preview in the main window.
+- Import/export share-string flow for moving reminders between instances.
+- Startup update checks against GitHub Releases with user-consent download and installer launch flow, prioritizing `setup.exe` assets for seamless upgrades.
+- Persistent JSON storage in Documents with automatic one-time migration from legacy app-data location.
 
 ## Input Examples
 
 - `Drink water in 45m`
 - `Stretch in 2h 30m`
+- `Hydrate in (3*10) minutes`
 - `Stand up at 7:00AM`
 - `Daily check at 19:30`
 - `Stand up at 7:00AM every day`
 - `Hydrate in 10m every 2 hours`
+- `Reminder at 7:00AM every Saturday, etc.`
+- `Workout at 6:30AM every Mon-Fri`
+- `Plan sprint at 8:15AM every weekdays`
 
-## Data Storage
+## User Data Storage
 
-Reminders are stored at:
+Reminders and user-editable greetings are stored in Documents:
+
+- `QStandardPaths::DocumentsLocation/RemindMe/reminders.json`
+- `QStandardPaths::DocumentsLocation/RemindMe/greetings.txt`
+
+On startup, RemindMe automatically migrates existing legacy data from:
 
 - `QStandardPaths::AppDataLocation/reminders.json`
+- legacy app-folder `greetings.txt` (when present) into Documents storage
+
+If `greetings.txt` is deleted, RemindMe regenerates a fresh default file automatically.
 
 ## Inspiration
 
@@ -46,9 +56,9 @@ RemindMe is inspired by:
 
 This project is an independent work and is not affiliated with or endorsed by those products.
 
-## Development
+## Technical / Development
 
-This repository follows the `cpp-mntchocoluvr` standardized layout and workflow (presets, VS Code tasks, CTest, CI).
+This repository follows the `cpp23-mntchocoluvr` standardized layout and workflow (presets, VS Code tasks, CTest, CI, clang targets).
 
 ### Prerequisites
 
@@ -68,7 +78,7 @@ The shared presets are path-agnostic. If Qt is not discoverable from `PATH`, set
 
 For repository maintenance, prefer the installed CLI helpers: `rg` for search, `fd` for file discovery, `jq` for JSON, and `gh` for GitHub operations.
 
-### Standard Workflow
+### Standard Workflow (Presets + CTest)
 
 Use presets first:
 
@@ -84,6 +94,9 @@ Convention gate:
 - `./scripts/check-conventions.ps1`
 - CI also runs this check before build/test.
 - CMake target equivalent: `cmake --build --preset debug --target conventions`
+- Additional build helper targets:
+  - `cmake --build --preset debug --target format-check`
+  - `cmake --build --preset debug --target lint`
 
 Release:
 
@@ -94,6 +107,48 @@ Release:
 3. Run tests:
    - `ctest --preset release`
 
+### Portable Release Packaging (Windows)
+
+1. Ensure release binary is built:
+   - `cmake --preset release`
+   - `cmake --build --preset release --parallel`
+2. Create portable folder + zip:
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable-release.ps1`
+
+Output:
+
+- `dist/RemindMe-<version>-windows-portable/`
+- `dist/RemindMe-<version>-windows-portable.zip`
+
+The script bundles the MinGW runtime and every non-system DLL Qt depends on (resolved from the MSYS2 toolchain `bin` directory) and fails if any dependency is left unresolved.
+
+3. Smoke test the package (launches it with a system-only `PATH`, like a machine without MSYS2):
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-test-package.ps1 -PackageDir dist/RemindMe-<version>-windows-portable`
+
+### Installer Release Packaging (Windows setup.exe)
+
+1. Build release and portable package:
+   - `cmake --preset release`
+   - `cmake --build --preset release --parallel`
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable-release.ps1`
+2. Build installer:
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-setup-release.ps1`
+
+Output:
+
+- `dist/RemindMe-<version>-setup.exe`
+
+### Auto-Update Release Contract (GitHub)
+
+RemindMe checks GitHub `releases/latest` at startup (throttled to once per day) and on tray action (`Check for Updates`).
+
+For seamless in-app auto-update behavior:
+
+- Publish with a semver tag like `v1.2.2`.
+- Attach a Windows installer asset with a filename containing `setup` or `installer` and extension `.exe` (recommended) or `.msi`.
+- Recommended asset name: `RemindMe-<version>-setup.exe`.
+- If only a portable `.zip` is attached, RemindMe can still download it, but install remains manual.
+
 ### VS Code Workflow
 
 - `Ctrl+Shift+B`: default task `build (debug)`
@@ -102,17 +157,22 @@ Release:
   - `configure (debug)` / `configure (release)`
   - `build (debug)` / `build (release)`
   - `test (debug)` / `test (release)`
+  - `format-check (debug)` / `lint (debug)`
 
 ### Project Structure
 
 - `CMakeLists.txt`: template-aligned main build configuration
-- `CMakePresets.json`: `debug` and `release` presets
+- `CMakePresets.json`: local + CI presets (`debug`, `release`, `ci-debug`, `ci-release`, `ci-lint`)
 - `src/`: implementation files in `snake_case` (for example `main_window.cpp`)
 - `include/remindme/`: public project headers in `snake_case` (for example `main_window.hpp`)
 - `resources/`: app resources/icons
+- `scripts/package-portable-release.ps1`: creates portable Windows release folder + zip
+- `scripts/smoke-test-package.ps1`: launches a packaged/installed app with a system-only `PATH` to catch missing DLLs
+- `scripts/package-setup-release.ps1`: builds a versioned Windows `setup.exe` from the staged portable package
+- `installer/RemindMe.iss`: Inno Setup installer definition used by setup packaging script
 - `tests/core_tests.cpp`: baseline tests registered with CTest
 - `.vscode/`: standardized tasks, launch, settings, snippets
-- `.github/workflows/ci.yml`: CI for debug/release build and debug tests
+- `.github/workflows/ci.yml`: CI for debug/release build and tests, plus portable + `setup.exe` packaging with install smoke tests
 
 ### Naming Conventions
 

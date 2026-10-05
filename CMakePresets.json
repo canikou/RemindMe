@@ -11,9 +11,19 @@
       }
     },
     {
+      "name": "local-msys2-base",
+      "hidden": true,
+      "inherits": "base"
+    },
+    {
+      "name": "ci-base",
+      "hidden": true,
+      "inherits": "base"
+    },
+    {
       "name": "debug",
       "displayName": "Debug (Ninja, PATH toolchain)",
-      "inherits": "base",
+      "inherits": "local-msys2-base",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
@@ -22,10 +32,39 @@
     {
       "name": "release",
       "displayName": "Release (Ninja, PATH toolchain)",
-      "inherits": "base",
+      "inherits": "local-msys2-base",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ci-debug",
+      "displayName": "CI Debug (Ninja, MSYS2 UCRT64)",
+      "inherits": "ci-base",
+      "binaryDir": "${sourceDir}/build/ci-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "ci-release",
+      "displayName": "CI Release (Ninja, MSYS2 UCRT64)",
+      "inherits": "ci-base",
+      "binaryDir": "${sourceDir}/build/ci-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ci-lint",
+      "displayName": "CI Lint (Ninja)",
+      "inherits": "ci-base",
+      "binaryDir": "${sourceDir}/build/ci-lint",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_CLANG_TOOLS": "ON",
+        "BUILD_TESTING": "OFF"
       }
     }
   ],
@@ -37,6 +76,18 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "ci-debug",
+      "configurePreset": "ci-debug"
+    },
+    {
+      "name": "ci-release",
+      "configurePreset": "ci-release"
+    },
+    {
+      "name": "ci-lint",
+      "configurePreset": "ci-lint"
     }
   ],
   "testPresets": [
@@ -50,6 +101,20 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-debug",
+      "configurePreset": "ci-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-release",
+      "configurePreset": "ci-release",
       "output": {
         "outputOnFailure": true
       }

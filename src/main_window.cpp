@@ -4,37 +4,65 @@
 #include "remindme/parser.hpp"
 #include "remindme/reminder_popup.hpp"
 #include "remindme/time_format.hpp"
+#include "remindme/update_utils.hpp"
+#include "remindme/weekday_utils.hpp"
 #include "remindme/win_focus.hpp"
 
 #include <QCheckBox>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFrame>
 #include <QFormLayout>
+#include <QFont>
+#include <QFontMetrics>
+#include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMenu>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QPropertyAnimation>
+#include <QProgressBar>
+#include <QProcess>
 #include <QPushButton>
 #include <QRandomGenerator>
+#include <QEasingCurve>
+#include <QScreen>
+#include <QSettings>
 #include <QStringConverter>
+#include <QStandardPaths>
 #include <QSystemTrayIcon>
 #include <QTime>
 #include <QTimeEdit>
 #include <QTextStream>
+#include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
+#include <QWindow>
 #include <QWidget>
 #include <QUuid>
 
 #include <algorithm>
 #include <array>
+#include <functional>
 
 namespace remindme
 {
@@ -50,7 +78,48 @@ constexpr int kCompletedPreviewCount = 2;
 constexpr int kCompletedPreviewRowHeight = 56;
 constexpr int kCompletedPreviewListPadding = 8;
 constexpr int kMaxCompletedItems = 50;
+constexpr int kPopupTransitionDelayMs = 250;
+constexpr int kPopupRefocusDelayMs = 150;
+constexpr int kInitialDueCheckDelayMs = 250;
+constexpr int kOverlayMaxVisibleTasks = 6;
+constexpr int kCompletedSlideDurationMs = 180;
+constexpr int kOverlayDefaultWidthPx = 280;
+constexpr int kOverlayDefaultHeightPx = 380;
+constexpr int kOverlayRootMarginPx = 0;
+constexpr int kOverlayPanelMarginPx = 0;
+constexpr int kOverlayRowPaddingLeftPx = 8;
+constexpr int kOverlayRowPaddingRightPx = 8;
+constexpr int kOverlayRowBorderPx = 2;
+constexpr int kOverlayRowLayoutSafetyPx = 4;
+constexpr int kOverlayTitleGapPx = 6;
+constexpr int kOverlayMinTitleColumnWidthPx = 108;
+constexpr int kOverlayMinTimerColumnWidthPx = 72;
+constexpr int kOverlayMaxTimerColumnWidthPx = 132;
+constexpr int kOverlayTitleInnerPaddingRightPx = 8;
+constexpr int kOverlayTimerFontPixelSize = 14;
+constexpr int kOverlayTextWidthSafetyPx = 6;
+constexpr double kOverlayTitleColumnRatio = 0.65;
 constexpr const char *kGreetingFileName = "greetings.txt";
+constexpr const char *kGreetingStateMarkerFileName = ".greetings_initialized";
+constexpr int kUpdateStartupDelayMs = 2500;
+constexpr qint64 kUpdateCheckIntervalSeconds = 24 * 60 * 60;
+constexpr const char *kUpdateLastCheckUtcSettingKey = "updates/last_check_utc";
+
+bool shouldCheckForUpdatesNow()
+{
+    const QSettings settings;
+    const QDateTime lastCheckedUtc = settings.value(QString::fromLatin1(kUpdateLastCheckUtcSettingKey)).toDateTime();
+    if (!lastCheckedUtc.isValid())
+        return true;
+
+    return lastCheckedUtc.secsTo(QDateTime::currentDateTimeUtc()) >= kUpdateCheckIntervalSeconds;
+}
+
+void recordUpdateCheckNow()
+{
+    QSettings settings;
+    settings.setValue(QString::fromLatin1(kUpdateLastCheckUtcSettingKey), QDateTime::currentDateTimeUtc());
+}
 
 enum class GreetingPeriod
 {
@@ -109,9 +178,32 @@ const QStringList &greetingPool(GreetingPeriod period)
         "Evening mood: quiet progress still counts 🌌"
     };
 
-    static const auto pickPath = []() -> QString
+    static const auto preferredGreetingPath = []() -> QString
     {
         const QString fileName = QString::fromLatin1(kGreetingFileName);
+
+        const QString documentsDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        if (!documentsDir.isEmpty())
+            return QDir(documentsDir).filePath(QString::fromLatin1(AppInfo::kAppName) + "/" + fileName);
+
+        const QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        if (!appDataDir.isEmpty())
+            return QDir(appDataDir).filePath(fileName);
+
+        return QCoreApplication::applicationDirPath() + "/" + fileName;
+    };
+
+    static const auto greetingStateMarkerPath = [](const QString &greetingPath) -> QString
+    {
+        const QString markerName = QString::fromLatin1(kGreetingStateMarkerFileName);
+        return QDir(QFileInfo(greetingPath).absolutePath()).filePath(markerName);
+    };
+
+    static const auto legacyGreetingCandidates = [](const QString &preferredPath) -> QStringList
+    {
+        const QString fileName = QString::fromLatin1(kGreetingFileName);
+        const QString preferredAbsPath = QFileInfo(preferredPath).absoluteFilePath();
+
         QStringList candidates;
         candidates.push_back(QDir::current().filePath(fileName));
 
@@ -123,12 +215,27 @@ const QStringList &greetingPool(GreetingPeriod period)
                 break;
         }
 
-        for (const QString &path : candidates)
+        QStringList uniquePaths;
+        for (const QString &candidate : candidates)
         {
-            if (QFile::exists(path))
-                return path;
+            const QString absPath = QFileInfo(candidate).absoluteFilePath();
+            if (absPath == preferredAbsPath)
+                continue;
+            if (!uniquePaths.contains(absPath))
+                uniquePaths.push_back(absPath);
         }
-        return QCoreApplication::applicationDirPath() + "/" + fileName;
+
+        return uniquePaths;
+    };
+
+    static const auto ensureGreetingStateMarker = [](const QString &markerPath)
+    {
+        QDir().mkpath(QFileInfo(markerPath).absolutePath());
+
+        QFile markerFile(markerPath);
+        if (!markerFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            return;
+        markerFile.close();
     };
 
     static const auto writeGreetingFile = [](const QString &path, const std::array<QStringList, 3> &pools)
@@ -167,11 +274,47 @@ const QStringList &greetingPool(GreetingPeriod period)
             defaultEveningGreetings,
         };
 
-        const QString path = pickPath();
-        if (!QFile::exists(path))
-            writeGreetingFile(path, result);
+        const QString preferredPath = preferredGreetingPath();
+        const QString stateMarkerPath = greetingStateMarkerPath(preferredPath);
+        QString resolvedPath = preferredPath;
 
-        QFile f(path);
+        if (!QFile::exists(preferredPath))
+        {
+            if (!QFile::exists(stateMarkerPath))
+            {
+                for (const QString &legacyPath : legacyGreetingCandidates(preferredPath))
+                {
+                    if (!QFile::exists(legacyPath))
+                        continue;
+
+                    QDir().mkpath(QFileInfo(preferredPath).absolutePath());
+                    if (QFile::copy(legacyPath, preferredPath))
+                    {
+                        ensureGreetingStateMarker(stateMarkerPath);
+                        resolvedPath = preferredPath;
+                    }
+                    else
+                    {
+                        // Keep old behavior as fallback if migration copy is blocked.
+                        resolvedPath = legacyPath;
+                    }
+                    break;
+                }
+            }
+
+            if (!QFile::exists(resolvedPath))
+            {
+                writeGreetingFile(preferredPath, result);
+                ensureGreetingStateMarker(stateMarkerPath);
+                resolvedPath = preferredPath;
+            }
+        }
+        else
+        {
+            ensureGreetingStateMarker(stateMarkerPath);
+        }
+
+        QFile f(resolvedPath);
         if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
             return result;
 
@@ -230,13 +373,29 @@ const QStringList &greetingPool(GreetingPeriod period)
     }
 }
 
-QDateTime nextAtTimeLocal(const QTime &timeOfDay)
+QDateTime nextAtTimeLocalFrom(const QTime &timeOfDay, const QDateTime &after, int repeatWeekdaysMask)
 {
-    const QDateTime now = QDateTime::currentDateTime();
-    QDateTime next(QDate::currentDate(), timeOfDay);
-    if (next <= now)
-        next = next.addDays(1);
-    return next;
+    const QDateTime anchor = after.isValid() ? after : QDateTime::currentDateTime();
+    const int mask = WeekdayUtils::normalizeMask(repeatWeekdaysMask);
+    const QDate baseDate = anchor.date();
+
+    for (int dayOffset = 0; dayOffset <= 14; ++dayOffset)
+    {
+        const QDate candidateDate = baseDate.addDays(dayOffset);
+        if (!WeekdayUtils::isSelected(mask, candidateDate.dayOfWeek()))
+            continue;
+
+        const QDateTime candidate(candidateDate, timeOfDay);
+        if (candidate > anchor)
+            return candidate;
+    }
+
+    return QDateTime(baseDate.addDays(1), timeOfDay);
+}
+
+QDateTime nextAtTimeLocal(const QTime &timeOfDay, int repeatWeekdaysMask = 0)
+{
+    return nextAtTimeLocalFrom(timeOfDay, QDateTime::currentDateTime(), repeatWeekdaysMask);
 }
 
 QString repeatIndicator()
@@ -279,7 +438,381 @@ QString repeatingInfoText(const Reminder &reminder)
         return QString("Every %1").arg(TimeFormat::formatIntervalText(interval));
     }
 
-    return QString("At %1 daily").arg(reminder.timeOfDay.toString("h:mm AP"));
+    const QString dayText = WeekdayUtils::maskDisplayText(reminder.repeatWeekdaysMask);
+    if (dayText == "daily")
+        return QString("At %1 daily").arg(reminder.timeOfDay.toString("h:mm AP"));
+    return QString("At %1 on %2").arg(reminder.timeOfDay.toString("h:mm AP"), dayText);
+}
+
+QString subtaskProgressText(const Reminder &reminder)
+{
+    if (reminder.checklistItems.isEmpty())
+        return QString();
+
+    return QString("Subtasks %1/%2 done")
+        .arg(reminder.checkedChecklistCount())
+        .arg(reminder.checklistItems.size());
+}
+
+struct OverlayLayoutMetrics
+{
+    int contentWidthPx = 220;
+    int titleColumnWidthPx = 142;
+    int timerColumnWidthPx = 72;
+};
+
+void clearLayoutItems(QLayout *layout)
+{
+    if (!layout)
+        return;
+
+    while (QLayoutItem *item = layout->takeAt(0))
+    {
+        if (QLayout *childLayout = item->layout())
+        {
+            clearLayoutItems(childLayout);
+            delete childLayout;
+        }
+
+        if (QWidget *childWidget = item->widget())
+            childWidget->deleteLater();
+
+        delete item;
+    }
+}
+
+void installEventFilterRecursively(QWidget *root, QObject *eventFilterTarget)
+{
+    if (!root || !eventFilterTarget)
+        return;
+
+    root->installEventFilter(eventFilterTarget);
+    const auto children = root->findChildren<QWidget *>();
+    for (QWidget *child : children)
+        child->installEventFilter(eventFilterTarget);
+}
+
+OverlayLayoutMetrics computeOverlayLayoutMetrics(int overlayWindowWidth)
+{
+    OverlayLayoutMetrics metrics;
+
+    const int safeWindowWidth = qMax(220, overlayWindowWidth);
+    const int outerChromePadding =
+        (kOverlayRootMarginPx * 2) +
+        (kOverlayPanelMarginPx * 2);
+    const int rowChromePadding =
+        kOverlayRowBorderPx +
+        kOverlayRowLayoutSafetyPx +
+        kOverlayRowPaddingLeftPx +
+        kOverlayRowPaddingRightPx +
+        kOverlayTitleGapPx +
+        1; // divider line
+
+    metrics.contentWidthPx = qMax(156, safeWindowWidth - outerChromePadding - rowChromePadding);
+
+    const int compactTimerMin = qMax(52, kOverlayMinTimerColumnWidthPx - 16);
+    const int compactTitleMin = qMax(84, kOverlayMinTitleColumnWidthPx - 18);
+
+    int timerWidth = static_cast<int>(metrics.contentWidthPx * (1.0 - kOverlayTitleColumnRatio));
+    timerWidth = qBound(compactTimerMin, timerWidth, kOverlayMaxTimerColumnWidthPx);
+
+    int titleWidth = metrics.contentWidthPx - timerWidth;
+    if (titleWidth < compactTitleMin)
+    {
+        titleWidth = compactTitleMin;
+        timerWidth = qMax(compactTimerMin, metrics.contentWidthPx - titleWidth);
+    }
+
+    metrics.titleColumnWidthPx = qMax(64, titleWidth - kOverlayTitleInnerPaddingRightPx);
+    metrics.timerColumnWidthPx = qMax(44, timerWidth);
+    return metrics;
+}
+
+int overlayTitleFontSize(const QString &title, int titleWidthPx)
+{
+    QFont largeFont;
+    largeFont.setPixelSize(16);
+    largeFont.setBold(true);
+    if (QFontMetrics(largeFont).horizontalAdvance(title) <= titleWidthPx)
+        return 16;
+
+    QFont mediumFont;
+    mediumFont.setPixelSize(14);
+    mediumFont.setBold(true);
+    if (QFontMetrics(mediumFont).horizontalAdvance(title) <= titleWidthPx)
+        return 14;
+
+    return 13;
+}
+
+QString fitOverlayTitleText(const QString &rawTitle, int fontSizePx, int titleWidthPx)
+{
+    const QString title = rawTitle.simplified();
+    const QString normalized = title.isEmpty() ? "(Untitled)" : title;
+
+    QFont titleFont;
+    titleFont.setPixelSize(fontSizePx);
+    titleFont.setBold(true);
+    const QFontMetrics metrics(titleFont);
+
+    if (metrics.horizontalAdvance(normalized) <= titleWidthPx)
+        return normalized;
+
+    const int approxCharsPerLine = qBound(8, titleWidthPx / qMax(6, metrics.averageCharWidth()), 30);
+    int splitPos = normalized.lastIndexOf(' ', approxCharsPerLine);
+    if (splitPos <= 0 || splitPos >= normalized.size() - 1)
+        return metrics.elidedText(normalized, Qt::ElideRight, titleWidthPx);
+
+    const QString firstLine = metrics.elidedText(normalized.left(splitPos).trimmed(), Qt::ElideRight, titleWidthPx);
+    const QString secondLine = metrics.elidedText(normalized.mid(splitPos + 1).trimmed(), Qt::ElideRight, titleWidthPx);
+    return firstLine + "\n" + secondLine;
+}
+
+QString twoDigitsText(qint64 value)
+{
+    return QString("%1").arg(value, 2, 10, QChar('0'));
+}
+
+QString overlayDayToken(qint64 days)
+{
+    if (days > 9999)
+        return "9999d+";
+    return QString("%1d").arg(days);
+}
+
+QString fitOverlayCountdownText(qint64 secondsRemaining, int timerColumnWidthPx)
+{
+    const qint64 clampedSeconds = qMax<qint64>(0, secondsRemaining);
+    qint64 remaining = clampedSeconds;
+    const qint64 days = remaining / 86400;
+    remaining %= 86400;
+    const qint64 hours = remaining / 3600;
+    remaining %= 3600;
+    const qint64 minutes = remaining / 60;
+
+    const QString fullText = TimeFormat::formatCountdown(clampedSeconds);
+    QStringList candidates;
+    candidates.push_back(fullText);
+
+    if (days > 0)
+    {
+        candidates.push_back(QString("%1 %2:%3")
+                                 .arg(overlayDayToken(days))
+                                 .arg(twoDigitsText(hours))
+                                 .arg(twoDigitsText(minutes)));
+        candidates.push_back(overlayDayToken(days));
+    }
+    else
+    {
+        candidates.push_back(QString("%1:%2")
+                                 .arg(twoDigitsText(hours))
+                                 .arg(twoDigitsText(minutes)));
+    }
+
+    candidates.push_back(QString("%1m").arg((clampedSeconds + 59) / 60));
+    candidates.push_back(QString("%1s").arg(clampedSeconds));
+
+    QFont timerFont("Cascadia Mono");
+    timerFont.setPixelSize(kOverlayTimerFontPixelSize);
+    timerFont.setStyleHint(QFont::TypeWriter);
+    timerFont.setBold(true);
+    const QFontMetrics metrics(timerFont);
+    const int maxTextWidthPx = qMax(24, timerColumnWidthPx - kOverlayTextWidthSafetyPx);
+    for (const QString &candidate : candidates)
+    {
+        if (metrics.horizontalAdvance(candidate) <= maxTextWidthPx)
+            return candidate;
+    }
+
+    const QString fallback = candidates.back();
+    const int perCharPx = qMax(1, metrics.horizontalAdvance(QLatin1Char('8')));
+    const int maxChars = qMax(2, maxTextWidthPx / perCharPx);
+    if (fallback.size() <= maxChars)
+        return fallback;
+    return fallback.left(qMax(1, maxChars - 1)) + "+";
+}
+
+QWidget *createOverlayReminderRow(
+    const Reminder &reminder,
+    const QDateTime &now,
+    const OverlayLayoutMetrics &layout,
+    QWidget *parent,
+    QObject *eventFilterTarget)
+{
+    auto *row = new QFrame(parent);
+    row->setStyleSheet("background: #1a1a1a; border: 1px solid #2d2d2d; border-radius: 7px;");
+
+    auto *root = new QVBoxLayout(row);
+    root->setContentsMargins(8, 8, 8, 9);
+    root->setSpacing(4);
+
+    auto *top = new QHBoxLayout();
+    top->setContentsMargins(0, 0, 0, 0);
+    top->setSpacing(kOverlayTitleGapPx);
+
+    const QString titleRaw = reminder.title.simplified();
+    const int titleFontPx = overlayTitleFontSize(titleRaw, layout.titleColumnWidthPx);
+    const QString titleText = fitOverlayTitleText(titleRaw, titleFontPx, layout.titleColumnWidthPx);
+
+    auto *titleLabel = new QLabel(titleText, row);
+    titleLabel->setAlignment(Qt::AlignCenter);
+    titleLabel->setWordWrap(true);
+    titleLabel->setFixedWidth(layout.titleColumnWidthPx);
+    titleLabel->setStyleSheet("color: #eaeaea;");
+    QFont titleFont = titleLabel->font();
+    titleFont.setPixelSize(titleFontPx);
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
+    const QFontMetrics titleMetrics(titleFont);
+    titleLabel->setMaximumHeight((titleMetrics.lineSpacing() * 2) + 2);
+
+    auto *divider = new QFrame(row);
+    divider->setFrameShape(QFrame::VLine);
+    divider->setFrameShadow(QFrame::Plain);
+    divider->setLineWidth(1);
+    divider->setStyleSheet("color: #2a2a2a; background: #2a2a2a; border: none;");
+    divider->setFixedHeight(titleLabel->maximumHeight());
+
+    const QString timeText = fitOverlayCountdownText(now.secsTo(reminder.nextLocal), layout.timerColumnWidthPx);
+    auto *timerLabel = new QLabel(timeText, row);
+    timerLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    timerLabel->setFixedWidth(layout.timerColumnWidthPx);
+    timerLabel->setStyleSheet(
+        "color: #f0f0f0; "
+        "font-family: \"Cascadia Mono\", \"Consolas\", \"Lucida Console\", monospace; "
+        "font-size: 14px; font-weight: 700;");
+
+    top->addWidget(titleLabel, 0, Qt::AlignVCenter);
+    top->addWidget(divider, 0, Qt::AlignVCenter);
+    top->addWidget(timerLabel, 0, Qt::AlignVCenter);
+    root->addLayout(top);
+
+    const QString checklistText = subtaskProgressText(reminder);
+    if (!checklistText.isEmpty())
+    {
+        auto *checklistLabel = new QLabel(checklistText, row);
+        checklistLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        checklistLabel->setFixedWidth(layout.titleColumnWidthPx);
+        checklistLabel->setStyleSheet("font-size: 10px; color: #a8d6ff; border: none;");
+        root->addWidget(checklistLabel, 0, Qt::AlignLeft);
+    }
+
+    installEventFilterRecursively(row, eventFilterTarget);
+    return row;
+}
+
+Reminder *findReminderById(QVector<Reminder> &items, const QString &id)
+{
+    for (Reminder &item : items)
+    {
+        if (item.id == id)
+            return &item;
+    }
+    return nullptr;
+}
+
+const Reminder *findReminderById(const QVector<Reminder> &items, const QString &id)
+{
+    for (const Reminder &item : items)
+    {
+        if (item.id == id)
+            return &item;
+    }
+    return nullptr;
+}
+
+bool showChecklistDialog(QWidget *parent, const QString &reminderTitle, Reminder &reminder)
+{
+    if (!reminder.repeating)
+        return false;
+
+    QDialog dialog(parent);
+    dialog.setWindowTitle(QString("Subtask - %1").arg(reminderTitle));
+    dialog.setModal(true);
+    dialog.resize(520, 420);
+
+    auto *root = new QVBoxLayout(&dialog);
+    auto *hint = new QLabel("Subtask progress resets each time this repeating reminder starts a new period.");
+    hint->setWordWrap(true);
+    hint->setStyleSheet("font-size: 12px; color: #bdbdbd;");
+    root->addWidget(hint);
+
+    auto *checklist = new QListWidget(&dialog);
+    checklist->setSelectionMode(QAbstractItemView::SingleSelection);
+    root->addWidget(checklist, 1);
+
+    auto addChecklistRow = [&](const QString &text, bool checked)
+    {
+        const QString trimmedText = text.trimmed();
+        if (trimmedText.isEmpty())
+            return;
+
+        auto *item = new QListWidgetItem(trimmedText);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+        item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+        checklist->addItem(item);
+    };
+
+    for (const Reminder::ChecklistItem &item : reminder.checklistItems)
+        addChecklistRow(item.text, item.checked);
+
+    auto *addRow = new QHBoxLayout();
+    auto *newItemEdit = new QLineEdit(&dialog);
+    newItemEdit->setPlaceholderText("Add subtask item");
+    auto *addBtn = new QPushButton("Add", &dialog);
+    auto *removeBtn = new QPushButton("Remove Selected", &dialog);
+    addRow->addWidget(newItemEdit, 1);
+    addRow->addWidget(addBtn);
+    addRow->addWidget(removeBtn);
+    root->addLayout(addRow);
+
+    QObject::connect(addBtn, &QPushButton::clicked, &dialog, [&]()
+                     {
+                         const QString text = newItemEdit->text().trimmed();
+                         if (text.isEmpty())
+                             return;
+
+                         addChecklistRow(text, false);
+                         newItemEdit->clear();
+                         newItemEdit->setFocus(); });
+
+    QObject::connect(newItemEdit, &QLineEdit::returnPressed, addBtn, &QPushButton::click);
+    QObject::connect(removeBtn, &QPushButton::clicked, &dialog, [&]()
+                     {
+                         QListWidgetItem *selected = checklist->currentItem();
+                         if (!selected)
+                             return;
+                         delete checklist->takeItem(checklist->row(selected)); });
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    root->addWidget(buttons);
+
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+
+    QVector<Reminder::ChecklistItem> updatedChecklist;
+    updatedChecklist.reserve(checklist->count());
+    for (int i = 0; i < checklist->count(); ++i)
+    {
+        QListWidgetItem *item = checklist->item(i);
+        if (!item)
+            continue;
+
+        const QString text = item->text().trimmed();
+        if (text.isEmpty())
+            continue;
+
+        Reminder::ChecklistItem updated;
+        updated.text = text;
+        updated.checked = (item->checkState() == Qt::Checked);
+        updatedChecklist.push_back(updated);
+    }
+
+    reminder.checklistItems = updatedChecklist;
+    reminder.enforceChecklistConstraints();
+    return true;
 }
 
 QString completedPatternText(const CompletedReminder &completed)
@@ -290,7 +823,10 @@ QString completedPatternText(const CompletedReminder &completed)
         return QString("Pattern: in %1").arg(TimeFormat::formatIntervalText(interval));
     }
 
-    return QString("Pattern: at %1").arg(completed.timeOfDay.toString("h:mm AP"));
+    const QString dayText = WeekdayUtils::maskDisplayText(completed.repeatWeekdaysMask);
+    if (dayText == "daily")
+        return QString("Pattern: at %1 daily").arg(completed.timeOfDay.toString("h:mm AP"));
+    return QString("Pattern: at %1 on %2").arg(completed.timeOfDay.toString("h:mm AP"), dayText);
 }
 
 QString completedTitleText(const CompletedReminder &completed)
@@ -299,6 +835,45 @@ QString completedTitleText(const CompletedReminder &completed)
         return completed.title;
 
     return QString("%1  (x%2)").arg(completed.title).arg(completed.completionCount);
+}
+
+QWidget *createCompletedEntryRow(
+    QWidget *parent,
+    const CompletedReminder &entry,
+    const std::function<void()> &onAddAgain)
+{
+    auto *row = new QWidget(parent);
+    auto *root = new QHBoxLayout(row);
+    root->setContentsMargins(12, 8, 12, 8);
+    root->setSpacing(12);
+
+    auto *textBox = new QVBoxLayout();
+    textBox->setContentsMargins(0, 0, 0, 0);
+    textBox->setSpacing(2);
+
+    auto *title = new QLabel(completedTitleText(entry));
+    title->setStyleSheet("font-size: 13px; font-weight: 700;");
+
+    auto *meta = new QLabel(
+        QString("%1 | %2")
+            .arg(entry.completedAt.toString("M/d/yyyy h:mm AP"), completedPatternText(entry)));
+    meta->setStyleSheet("font-size: 12px; color: #9f9f9f;");
+
+    textBox->addWidget(title);
+    textBox->addWidget(meta);
+
+    auto *textWrap = new QWidget(row);
+    textWrap->setLayout(textBox);
+
+    auto *addAgainBtn = new QPushButton("Add Again", row);
+    addAgainBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
+    QObject::connect(addAgainBtn, &QPushButton::clicked, row, [onAddAgain]()
+                     { onAddAgain(); });
+
+    root->addWidget(textWrap, 1);
+    root->addWidget(addAgainBtn);
+
+    return row;
 }
 
 bool isSameCompletedPattern(const CompletedReminder &completed, const Reminder &reminder)
@@ -316,7 +891,8 @@ bool isSameCompletedPattern(const CompletedReminder &completed, const Reminder &
         return completedInterval == reminderInterval;
     }
 
-    return completed.timeOfDay == reminder.timeOfDay;
+    return completed.timeOfDay == reminder.timeOfDay &&
+           WeekdayUtils::normalizeMask(completed.repeatWeekdaysMask) == WeekdayUtils::normalizeMask(reminder.repeatWeekdaysMask);
 }
 
 void rescheduleAfterAcknowledge(Reminder &reminder, const QDateTime &now)
@@ -335,7 +911,8 @@ void rescheduleAfterAcknowledge(Reminder &reminder, const QDateTime &now)
         return;
     }
 
-    reminder.nextLocal = nextAtTimeLocal(reminder.timeOfDay);
+    const int weekdayMask = reminder.repeating ? WeekdayUtils::normalizeMask(reminder.repeatWeekdaysMask) : 0;
+    reminder.nextLocal = nextAtTimeLocalFrom(reminder.timeOfDay, now, weekdayMask);
 }
 
 struct EditReminderValues
@@ -465,7 +1042,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     viewAllCompletedBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
     connect(viewAllCompletedBtn, &QPushButton::clicked, this, &MainWindow::showAllCompletedDialog);
 
+    overlayToggle = new QCheckBox("Overlay");
+    overlayToggle->setStyleSheet("font-size: 12px; color: #cfcfcf;");
+
     topRow->addWidget(titleLabel, 1);
+    topRow->addWidget(overlayToggle, 0, Qt::AlignRight);
     topRow->addWidget(viewAllCompletedBtn, 0, Qt::AlignRight);
     v->addLayout(topRow);
 
@@ -492,9 +1073,36 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     stacked->addWidget(list);
     v->addWidget(stacked, 1);
 
+    completedSection = new QWidget();
+    auto *completedSectionLayout = new QVBoxLayout(completedSection);
+    completedSectionLayout->setContentsMargins(0, 0, 0, 0);
+    completedSectionLayout->setSpacing(4);
+
+    auto *completedHeaderRow = new QHBoxLayout();
+    completedHeaderRow->setContentsMargins(0, 0, 0, 0);
+    completedHeaderRow->setSpacing(8);
+
     completedHeaderLabel = new QLabel("Completed");
     completedHeaderLabel->setStyleSheet("font-size: 13px; font-weight: 700; color: #cccccc;");
-    v->addWidget(completedHeaderLabel);
+
+    completedToggleBtn = new QToolButton();
+    completedToggleBtn->setText("Hide");
+    completedToggleBtn->setArrowType(Qt::DownArrow);
+    completedToggleBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    completedToggleBtn->setAutoRaise(true);
+    completedToggleBtn->setCursor(Qt::PointingHandCursor);
+    completedToggleBtn->setStyleSheet("font-size: 12px; color: #cfcfcf; padding: 2px 4px;");
+    connect(completedToggleBtn, &QToolButton::clicked, this, &MainWindow::toggleCompletedPreview);
+
+    completedHeaderRow->addWidget(completedHeaderLabel);
+    completedHeaderRow->addStretch(1);
+    completedHeaderRow->addWidget(completedToggleBtn, 0, Qt::AlignRight);
+    completedSectionLayout->addLayout(completedHeaderRow);
+
+    completedPreviewBody = new QWidget();
+    auto *completedBodyLayout = new QVBoxLayout(completedPreviewBody);
+    completedBodyLayout->setContentsMargins(0, 0, 0, 0);
+    completedBodyLayout->setSpacing(0);
 
     completedList = new QListWidget();
     completedList->setStyleSheet(R"(
@@ -504,17 +1112,75 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     completedList->setSpacing(0);
     completedList->setUniformItemSizes(false);
     completedList->setFixedHeight((kCompletedPreviewCount * kCompletedPreviewRowHeight) + kCompletedPreviewListPadding);
-    v->addWidget(completedList);
+    completedBodyLayout->addWidget(completedList);
+    completedSectionLayout->addWidget(completedPreviewBody);
+    v->addWidget(completedSection);
+
+    completedPreviewAnim = new QPropertyAnimation(completedPreviewBody, "maximumHeight", this);
+    completedPreviewAnim->setDuration(kCompletedSlideDurationMs);
+    completedPreviewAnim->setEasingCurve(QEasingCurve::InOutCubic);
+    completedPreviewBody->setMaximumHeight(completedPreviewExpandedHeight());
+    setCompletedPreviewCollapsed(false, false);
 
     auto *h = new QHBoxLayout();
     input = new QLineEdit();
     input->setPlaceholderText(R"(e.g. "Drink water in 45m" or "Stand up at 7:00AM every day")");
+    auto *exportBtn = new QPushButton("Export");
+    auto *importBtn = new QPushButton("Import");
+    exportBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
+    importBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
     h->addWidget(input, 1);
+    h->addWidget(exportBtn);
+    h->addWidget(importBtn);
     v->addLayout(h);
 
     setCentralWidget(central);
 
+    overlayWindow = new QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    overlayWindow->setAttribute(Qt::WA_QuitOnClose, false);
+    overlayWindow->setAttribute(Qt::WA_TranslucentBackground, true);
+    overlayWindow->setWindowTitle("RemindMe Overlay");
+    overlayWindow->resize(kOverlayDefaultWidthPx, kOverlayDefaultHeightPx);
+    overlayWindow->setObjectName("overlayWindow");
+    overlayWindow->setStyleSheet(R"(
+        QFrame#overlayPanel {
+            background: transparent;
+            border: none;
+        }
+    )");
+
+    auto *overlayRootLayout = new QVBoxLayout(overlayWindow);
+    overlayRootLayout->setContentsMargins(kOverlayRootMarginPx, kOverlayRootMarginPx, kOverlayRootMarginPx, kOverlayRootMarginPx);
+    overlayRootLayout->setSpacing(0);
+
+    auto *overlayPanel = new QFrame(overlayWindow);
+    overlayPanel->setObjectName("overlayPanel");
+    overlayRootLayout->addWidget(overlayPanel);
+
+    auto *overlayLayout = new QVBoxLayout(overlayPanel);
+    overlayLayout->setContentsMargins(kOverlayPanelMarginPx, kOverlayPanelMarginPx, kOverlayPanelMarginPx, kOverlayPanelMarginPx);
+    overlayLayout->setSpacing(0);
+
+    overlayBody = new QWidget(overlayPanel);
+    overlayBody->setObjectName("overlayBody");
+    overlayRowsLayout = new QVBoxLayout(overlayBody);
+    overlayRowsLayout->setContentsMargins(0, 0, 0, 0);
+    overlayRowsLayout->setSpacing(0);
+    overlayLayout->addWidget(overlayBody, 1);
+    installEventFilterRecursively(overlayWindow, this);
+
+    if (QScreen *primaryScreen = QGuiApplication::primaryScreen())
+    {
+        const QRect available = primaryScreen->availableGeometry();
+        overlayWindow->move(available.right() - overlayWindow->width() - 20, available.top() + 20);
+    }
+    overlayWindow->hide();
+
+    connect(overlayToggle, &QCheckBox::toggled, this, &MainWindow::setOverlayVisible);
+
     connect(input, &QLineEdit::returnPressed, this, &MainWindow::onAddClicked);
+    connect(exportBtn, &QPushButton::clicked, this, &MainWindow::onExportClicked);
+    connect(importBtn, &QPushButton::clicked, this, &MainWindow::onImportClicked);
 
     QString err;
     if (!store.load(err))
@@ -524,13 +1190,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     updateGreetingMessage();
     nowLabel->setText(TimeFormat::formatClockTime(QDateTime::currentDateTime()));
-    triggerDueReminders();
     refreshUI();
 
     tickTimer = new QTimer(this);
     tickTimer->setInterval(kTickIntervalMs);
     connect(tickTimer, &QTimer::timeout, this, &MainWindow::onTick);
     tickTimer->start();
+
+    QTimer::singleShot(kInitialDueCheckDelayMs, this, [this]()
+                       { triggerDueReminders(); });
+    QTimer::singleShot(kUpdateStartupDelayMs, this, &MainWindow::maybeCheckForUpdatesOnStartup);
 }
 
 void MainWindow::closeEvent(QCloseEvent *e)
@@ -557,6 +1226,62 @@ void MainWindow::closeEvent(QCloseEvent *e)
     QMainWindow::closeEvent(e);
 }
 
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (!overlayWindow)
+        return QMainWindow::eventFilter(watched, event);
+
+    QWidget *watchedWidget = qobject_cast<QWidget *>(watched);
+    if (!watchedWidget || watchedWidget->window() != overlayWindow)
+        return QMainWindow::eventFilter(watched, event);
+
+    switch (event->type())
+    {
+    case QEvent::MouseButtonPress:
+    {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (mouseEvent->button() != Qt::LeftButton)
+            break;
+
+        if (QWindow *windowHandle = overlayWindow->windowHandle())
+        {
+            if (windowHandle->startSystemMove())
+            {
+                overlayDragging = false;
+                return true;
+            }
+        }
+
+        overlayDragging = true;
+        overlayDragOffset = mouseEvent->globalPosition().toPoint() - overlayWindow->frameGeometry().topLeft();
+        return true;
+    }
+    case QEvent::MouseMove:
+    {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (!overlayDragging || !(mouseEvent->buttons() & Qt::LeftButton))
+            break;
+
+        overlayWindow->move(mouseEvent->globalPosition().toPoint() - overlayDragOffset);
+        return true;
+    }
+    case QEvent::MouseButtonRelease:
+    {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (mouseEvent->button() == Qt::LeftButton && overlayDragging)
+        {
+            overlayDragging = false;
+            return true;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+
+    return QMainWindow::eventFilter(watched, event);
+}
+
 void MainWindow::setupSystemTray()
 {
     if (!QSystemTrayIcon::isSystemTrayAvailable())
@@ -567,9 +1292,12 @@ void MainWindow::setupSystemTray()
 
     trayMenu = new QMenu(this);
     showAction = trayMenu->addAction("Open RemindMe");
+    checkUpdatesAction = trayMenu->addAction("Check for Updates");
+    trayMenu->addSeparator();
     quitAction = trayMenu->addAction("Quit");
 
     connect(showAction, &QAction::triggered, this, &MainWindow::showFromTray);
+    connect(checkUpdatesAction, &QAction::triggered, this, &MainWindow::onCheckUpdatesClicked);
     connect(quitAction, &QAction::triggered, this, &MainWindow::quitFromTray);
     connect(trayIcon, &QSystemTrayIcon::activated, this, &MainWindow::onTrayIconActivated);
 
@@ -588,6 +1316,8 @@ void MainWindow::quitFromTray()
     quittingFromTray = true;
     saveStoreBestEffort();
 
+    setOverlayVisible(false);
+
     if (trayIcon)
         trayIcon->hide();
 
@@ -598,6 +1328,290 @@ void MainWindow::onTrayIconActivated(QSystemTrayIcon::ActivationReason reason)
 {
     if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick)
         showFromTray();
+}
+
+void MainWindow::onCheckUpdatesClicked()
+{
+    checkForUpdates(true);
+}
+
+void MainWindow::maybeCheckForUpdatesOnStartup()
+{
+    if (!shouldCheckForUpdatesNow())
+        return;
+    checkForUpdates(false);
+}
+
+void MainWindow::checkForUpdates(bool userInitiated)
+{
+    if (updateMetadataReply || updateDownloadReply)
+    {
+        if (userInitiated)
+            QMessageBox::information(this, "Update check", "An update check is already running.");
+        return;
+    }
+
+    if (!updateNetwork)
+        updateNetwork = new QNetworkAccessManager(this);
+
+    updateUserInitiatedCheck = userInitiated;
+    recordUpdateCheckNow();
+
+    QNetworkRequest request(QUrl(QString::fromLatin1(AppInfo::kLatestReleaseApiUrl)));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QString("%1/%2").arg(AppInfo::kAppName, AppInfo::kAppVersion));
+    request.setRawHeader("Accept", "application/vnd.github+json");
+    request.setTransferTimeout(15000);
+
+    updateMetadataReply = updateNetwork->get(request);
+    connect(updateMetadataReply, &QNetworkReply::finished, this, &MainWindow::handleUpdateMetadataReply);
+}
+
+void MainWindow::handleUpdateMetadataReply()
+{
+    QNetworkReply *reply = updateMetadataReply.data();
+    updateMetadataReply.clear();
+    if (!reply)
+        return;
+
+    const bool userInitiated = updateUserInitiatedCheck;
+    updateUserInitiatedCheck = false;
+
+    const QNetworkReply::NetworkError networkError = reply->error();
+    const QString networkErrorText = reply->errorString();
+    const QByteArray payload = reply->readAll();
+    reply->deleteLater();
+
+    if (networkError != QNetworkReply::NoError)
+    {
+        if (userInitiated)
+            QMessageBox::warning(this, "Update check", QString("Failed to check updates:\n%1").arg(networkErrorText));
+        return;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+    {
+        if (userInitiated)
+            QMessageBox::warning(this, "Update check", "Update metadata was invalid.");
+        return;
+    }
+
+    const QJsonObject root = document.object();
+    const QString latestTag = root.value("tag_name").toString().trimmed();
+    const QString releaseUrl = root.value("html_url").toString(QString::fromLatin1(AppInfo::kReleasesPageUrl));
+
+    if (latestTag.isEmpty())
+    {
+        if (userInitiated)
+            QMessageBox::warning(this, "Update check", "Latest release did not include a version tag.");
+        return;
+    }
+
+    if (!UpdateUtils::isRemoteVersionNewer(latestTag, QString::fromLatin1(AppInfo::kAppVersion)))
+    {
+        if (userInitiated)
+            QMessageBox::information(this, "Update check", "You're already on the latest version.");
+        return;
+    }
+
+    const UpdateUtils::UpdateAssetInfo asset = UpdateUtils::pickBestReleaseAsset(root.value("assets").toArray());
+    if (!asset.downloadUrl.isValid())
+    {
+        const QMessageBox::StandardButton open =
+            QMessageBox::question(this,
+                                  "Update available",
+                                  QString("A new version (%1) is available, but no downloadable asset was found.\n\nOpen the releases page now?")
+                                      .arg(latestTag),
+                                  QMessageBox::Yes | QMessageBox::No,
+                                  QMessageBox::Yes);
+        if (open == QMessageBox::Yes)
+            QDesktopServices::openUrl(QUrl(releaseUrl));
+        return;
+    }
+
+    QString message = QString("A new version (%1) is available.\nCurrent version: %2.\n\nDo you want to download and install it now?")
+                          .arg(latestTag, QString::fromLatin1(AppInfo::kAppVersion));
+    if (!asset.isInstaller)
+        message += "\n\nNo installer asset was found. RemindMe can download the release package, but installation may require manual steps.";
+
+    const QMessageBox::StandardButton answer =
+        QMessageBox::question(this, "Update available", message, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    cleanupUpdateDownload(false);
+
+    const QString tempDirPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    if (tempDirPath.isEmpty())
+    {
+        QMessageBox::warning(this, "Update download", "No writable temp directory is available.");
+        return;
+    }
+
+    QDir().mkpath(tempDirPath);
+    const QString safeName = QFileInfo(asset.name).fileName();
+    updateDownloadedAssetName = safeName.isEmpty() ? QString("update-%1.bin").arg(latestTag) : safeName;
+    updateDownloadedFilePath = QDir(tempDirPath).filePath(QString("%1-%2").arg(AppInfo::kAppName, updateDownloadedAssetName));
+    updateExpectedSha256Hex = asset.sha256Hex;
+
+    QFile::remove(updateDownloadedFilePath);
+    updateDownloadFile = new QFile(updateDownloadedFilePath, this);
+    if (!updateDownloadFile->open(QIODevice::WriteOnly | QIODevice::Truncate))
+    {
+        delete updateDownloadFile;
+        updateDownloadFile = nullptr;
+        QMessageBox::warning(this, "Update download", "Failed to open local file for update download.");
+        updateDownloadedFilePath.clear();
+        updateDownloadedAssetName.clear();
+        updateExpectedSha256Hex.clear();
+        return;
+    }
+
+    QNetworkRequest downloadRequest(asset.downloadUrl);
+    downloadRequest.setHeader(QNetworkRequest::UserAgentHeader, QString("%1/%2").arg(AppInfo::kAppName, AppInfo::kAppVersion));
+    downloadRequest.setTransferTimeout(60000);
+
+    updateDownloadReply = updateNetwork->get(downloadRequest);
+    connect(updateDownloadReply, &QNetworkReply::readyRead, this, &MainWindow::handleUpdateDownloadReadyRead);
+    connect(updateDownloadReply, &QNetworkReply::finished, this, &MainWindow::handleUpdateDownloadFinished);
+}
+
+void MainWindow::handleUpdateDownloadReadyRead()
+{
+    if (!updateDownloadReply || !updateDownloadFile || !updateDownloadFile->isOpen())
+        return;
+
+    const QByteArray chunk = updateDownloadReply->readAll();
+    if (!chunk.isEmpty())
+        updateDownloadFile->write(chunk);
+}
+
+void MainWindow::handleUpdateDownloadFinished()
+{
+    QNetworkReply *reply = updateDownloadReply.data();
+    if (!reply)
+        return;
+
+    handleUpdateDownloadReadyRead();
+
+    const QNetworkReply::NetworkError networkError = reply->error();
+    const QString networkErrorText = reply->errorString();
+    reply->deleteLater();
+    updateDownloadReply.clear();
+
+    if (updateDownloadFile)
+    {
+        if (updateDownloadFile->isOpen())
+            updateDownloadFile->close();
+        delete updateDownloadFile;
+        updateDownloadFile = nullptr;
+    }
+
+    if (networkError != QNetworkReply::NoError)
+    {
+        const QString failedPath = updateDownloadedFilePath;
+        cleanupUpdateDownload(false);
+        QMessageBox::warning(this, "Update download", QString("Failed to download update:\n%1").arg(networkErrorText));
+        QFile::remove(failedPath);
+        return;
+    }
+
+    if (!updateExpectedSha256Hex.isEmpty())
+    {
+        QFile downloaded(updateDownloadedFilePath);
+        if (!downloaded.open(QIODevice::ReadOnly))
+        {
+            cleanupUpdateDownload(false);
+            QMessageBox::warning(this, "Update verification", "Downloaded update could not be reopened for verification.");
+            return;
+        }
+
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        while (!downloaded.atEnd())
+            hash.addData(downloaded.read(64 * 1024));
+
+        const QString actualHex = QString::fromLatin1(hash.result().toHex()).toLower();
+        if (actualHex != updateExpectedSha256Hex.toLower())
+        {
+            cleanupUpdateDownload(false);
+            QMessageBox::warning(this, "Update verification", "Downloaded update failed checksum verification.");
+            return;
+        }
+    }
+
+    const bool installerAsset = UpdateUtils::isInstallerAssetName(updateDownloadedAssetName);
+    if (!installerAsset)
+    {
+        QMessageBox::information(
+            this,
+            "Update downloaded",
+            QString("Downloaded the latest release package to:\n%1\n\nNo installer was detected in this asset. You can install it manually.")
+                .arg(QDir::toNativeSeparators(updateDownloadedFilePath)));
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(updateDownloadedFilePath).absolutePath()));
+        cleanupUpdateDownload(true);
+        return;
+    }
+
+    const QMessageBox::StandardButton installNow =
+        QMessageBox::question(this,
+                              "Install update",
+                              QString("Update downloaded to:\n%1\n\nInstall now? RemindMe will close.")
+                                  .arg(QDir::toNativeSeparators(updateDownloadedFilePath)),
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::Yes);
+    if (installNow != QMessageBox::Yes)
+    {
+        cleanupUpdateDownload(true);
+        return;
+    }
+
+    bool started = false;
+    const QString lowerName = updateDownloadedAssetName.toLower();
+    if (lowerName.endsWith(".msi"))
+    {
+        started = QProcess::startDetached(
+            "msiexec",
+            QStringList() << "/i" << QDir::toNativeSeparators(updateDownloadedFilePath));
+    }
+    else
+    {
+        started = QProcess::startDetached(QDir::toNativeSeparators(updateDownloadedFilePath), QStringList());
+    }
+
+    if (!started)
+    {
+        QMessageBox::warning(this, "Install update", "Failed to launch installer.");
+        cleanupUpdateDownload(true);
+        return;
+    }
+
+    cleanupUpdateDownload(true);
+    quitFromTray();
+}
+
+void MainWindow::cleanupUpdateDownload(bool keepDownloadedFile)
+{
+    if (updateDownloadReply)
+    {
+        updateDownloadReply->deleteLater();
+        updateDownloadReply.clear();
+    }
+
+    if (updateDownloadFile)
+    {
+        if (updateDownloadFile->isOpen())
+            updateDownloadFile->close();
+        delete updateDownloadFile;
+        updateDownloadFile = nullptr;
+    }
+
+    if (!keepDownloadedFile && !updateDownloadedFilePath.isEmpty())
+        QFile::remove(updateDownloadedFilePath);
+
+    updateDownloadedFilePath.clear();
+    updateDownloadedAssetName.clear();
+    updateExpectedSha256Hex.clear();
 }
 
 void MainWindow::updateGreetingMessage()
@@ -624,6 +1638,7 @@ void MainWindow::onTick()
     nowLabel->setText(TimeFormat::formatClockTime(QDateTime::currentDateTime()));
     triggerDueReminders();
     updateCountdownLabels();
+    updateOverlayContents();
 }
 
 void MainWindow::onAddClicked()
@@ -645,6 +1660,7 @@ void MainWindow::onAddClicked()
     reminder.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     reminder.title = parsed.title;
     reminder.repeating = shouldRepeat;
+    reminder.repeatWeekdaysMask = 0;
 
     if (parsed.isRelative)
     {
@@ -657,17 +1673,27 @@ void MainWindow::onAddClicked()
     else
     {
         reminder.timeOfDay = parsed.timeOfDay;
-        reminder.nextLocal = nextAtTimeLocal(parsed.timeOfDay);
+        const int repeatWeekdayMask = WeekdayUtils::normalizeMask(parsed.repeatWeekdaysMask);
 
-        if (shouldRepeat && parsed.hasRepeatDirective && parsed.repeatIntervalSeconds != 86400)
+        if (shouldRepeat && repeatWeekdayMask != 0)
+        {
+            reminder.scheduleType = ScheduleType::AtTimeOfDay;
+            reminder.intervalSeconds = 0;
+            reminder.repeatWeekdaysMask = repeatWeekdayMask;
+            reminder.nextLocal = nextAtTimeLocal(parsed.timeOfDay, reminder.repeatWeekdaysMask);
+        }
+        else if (shouldRepeat && parsed.hasRepeatDirective && parsed.repeatIntervalSeconds != 86400)
         {
             reminder.scheduleType = ScheduleType::Relative;
             reminder.intervalSeconds = parsed.repeatIntervalSeconds;
+            reminder.nextLocal = QDateTime::currentDateTime().addSecs(parsed.repeatIntervalSeconds);
         }
         else
         {
             reminder.scheduleType = ScheduleType::AtTimeOfDay;
             reminder.intervalSeconds = 0;
+            reminder.repeatWeekdaysMask = 0;
+            reminder.nextLocal = nextAtTimeLocal(parsed.timeOfDay);
         }
     }
 
@@ -685,6 +1711,53 @@ void MainWindow::onAddClicked()
     input->clear();
 }
 
+void MainWindow::onExportClicked()
+{
+    QString err;
+    const QString shareString = store.exportShareString(err);
+    if (shareString.isEmpty())
+    {
+        QMessageBox::warning(this, "Export error", err.isEmpty() ? "Failed to create export string." : err);
+        return;
+    }
+
+    if (QGuiApplication::clipboard())
+        QGuiApplication::clipboard()->setText(shareString);
+
+    QMessageBox info(this);
+    info.setWindowTitle("Export Reminders");
+    info.setIcon(QMessageBox::Information);
+    info.setText("Export string copied to clipboard.");
+    info.setInformativeText("Send this string to another RemindMe instance and use Import there.");
+    info.setDetailedText(shareString);
+    info.exec();
+}
+
+void MainWindow::onImportClicked()
+{
+    bool accepted = false;
+    const QString shareString = QInputDialog::getMultiLineText(
+        this,
+        "Import Reminders",
+        "Paste export string:",
+        QString(),
+        &accepted);
+
+    if (!accepted)
+        return;
+
+    int importedCount = 0;
+    QString err;
+    if (!store.importShareString(shareString, importedCount, err))
+    {
+        QMessageBox::warning(this, "Import error", err);
+        return;
+    }
+
+    commitReminderChanges();
+    QMessageBox::information(this, "Import complete", QString("Imported %1 reminder(s).").arg(importedCount));
+}
+
 void MainWindow::deleteReminderById(const QString &id)
 {
     auto &items = store.items();
@@ -697,8 +1770,12 @@ void MainWindow::deleteReminderById(const QString &id)
         break;
     }
 
-    activePopups.remove(id);
+    queuedPopupIds.removeAll(id);
+    if (activePopupId == id)
+        activePopupId.clear();
+
     commitReminderChanges();
+    queueNextPopupDisplay();
 }
 
 void MainWindow::editReminderById(const QString &id)
@@ -734,6 +1811,7 @@ void MainWindow::editReminderById(const QString &id)
 
             reminder.scheduleType = ScheduleType::Relative;
             reminder.nextLocal = QDateTime::currentDateTime().addSecs(nextDelaySeconds);
+            reminder.repeatWeekdaysMask = 0;
 
             if (!values.repeating)
             {
@@ -764,13 +1842,41 @@ void MainWindow::editReminderById(const QString &id)
         {
             reminder.scheduleType = ScheduleType::AtTimeOfDay;
             reminder.timeOfDay = values.timeOfDay;
-            reminder.nextLocal = nextAtTimeLocal(values.timeOfDay);
             reminder.intervalSeconds = 0;
+            if (!values.repeating)
+            {
+                reminder.repeatWeekdaysMask = 0;
+            }
+            else
+            {
+                reminder.repeatWeekdaysMask = WeekdayUtils::normalizeMask(reminder.repeatWeekdaysMask);
+            }
+            reminder.nextLocal = nextAtTimeLocal(values.timeOfDay, reminder.repeating ? reminder.repeatWeekdaysMask : 0);
         }
 
+        reminder.enforceChecklistConstraints();
+        queuedPopupIds.removeAll(id);
         commitReminderChanges();
         return;
     }
+}
+
+void MainWindow::editChecklistById(const QString &id)
+{
+    Reminder *reminder = findReminderById(store.items(), id);
+    if (!reminder)
+        return;
+
+    if (!reminder->repeating)
+    {
+        QMessageBox::warning(this, "Subtask unavailable", "Subtasks are only available on repeating reminders.");
+        return;
+    }
+
+    if (!showChecklistDialog(this, reminder->title, *reminder))
+        return;
+
+    commitReminderChanges();
 }
 
 void MainWindow::refreshUI()
@@ -817,12 +1923,85 @@ void MainWindow::refreshUI()
             auto *due = new QLabel(TimeFormat::formatDueDateTime(reminder.nextLocal));
             due->setStyleSheet("font-size: 13px; color: #bfbfbf;");
 
-            auto *extra = new QLabel(repeatingInfoText(reminder));
+            const QString extraText = repeatingInfoText(reminder);
+
+            auto *extra = new QLabel(extraText);
             extra->setStyleSheet("font-size: 13px; color: #8f8f8f;");
 
             infoBox->addWidget(title);
             infoBox->addWidget(due);
             infoBox->addWidget(extra);
+
+            if (!reminder.checklistItems.isEmpty())
+            {
+                auto *progressRow = new QHBoxLayout();
+                progressRow->setContentsMargins(0, 0, 0, 0);
+                progressRow->setSpacing(10);
+
+                auto *progressLabel = new QLabel(subtaskProgressText(reminder));
+                progressLabel->setStyleSheet("font-size: 12px; color: #a8d6ff;");
+
+                auto *progress = new QProgressBar();
+                progress->setRange(0, reminder.checklistItems.size());
+                progress->setValue(reminder.checkedChecklistCount());
+                progress->setTextVisible(false);
+                progress->setFixedHeight(10);
+                progress->setStyleSheet(R"(
+                    QProgressBar {
+                        border: 1px solid #3a3a3a;
+                        background: #232323;
+                        border-radius: 4px;
+                    }
+                    QProgressBar::chunk {
+                        background: #4ca3ff;
+                    }
+                )");
+
+                progressRow->addWidget(progressLabel);
+                progressRow->addWidget(progress, 1);
+                infoBox->addLayout(progressRow);
+
+                bool hasPendingSubtasks = false;
+                for (int subtaskIndex = 0; subtaskIndex < reminder.checklistItems.size(); ++subtaskIndex)
+                {
+                    const Reminder::ChecklistItem &subtask = reminder.checklistItems[subtaskIndex];
+                    const QString subtaskText = subtask.text.trimmed();
+                    if (subtask.checked || subtaskText.isEmpty())
+                        continue;
+
+                    if (!hasPendingSubtasks)
+                    {
+                        auto *subtaskHeader = new QLabel("Subtasks");
+                        subtaskHeader->setStyleSheet("font-size: 12px; font-weight: 700; color: #d2d2d2;");
+                        infoBox->addWidget(subtaskHeader);
+                        hasPendingSubtasks = true;
+                    }
+
+                    auto *subtaskCheck = new QCheckBox(subtaskText);
+                    subtaskCheck->setStyleSheet("font-size: 12px; color: #c0c0c0;");
+                    subtaskCheck->setChecked(false);
+                    connect(subtaskCheck, &QCheckBox::clicked, this, [this, rid = reminder.id, subtaskIndex](bool checked)
+                            {
+                                Reminder *target = findReminderById(store.items(), rid);
+                                if (!target)
+                                    return;
+                                if (subtaskIndex < 0 || subtaskIndex >= target->checklistItems.size())
+                                    return;
+                                if (target->checklistItems[subtaskIndex].checked == checked)
+                                    return;
+
+                                target->checklistItems[subtaskIndex].checked = checked;
+                                commitReminderChanges(); });
+                    infoBox->addWidget(subtaskCheck);
+                }
+
+                if (!hasPendingSubtasks)
+                {
+                    auto *allDoneLabel = new QLabel("All subtasks done for this period.");
+                    allDoneLabel->setStyleSheet("font-size: 12px; color: #8f8f8f;");
+                    infoBox->addWidget(allDoneLabel);
+                }
+            }
 
             auto *infoWrap = new QWidget();
             infoWrap->setLayout(infoBox);
@@ -839,6 +2018,13 @@ void MainWindow::refreshUI()
             connect(editBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { editReminderById(rid); });
             connect(delBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { deleteReminderById(rid); });
 
+            if (reminder.repeating)
+            {
+                auto *checklistBtn = new QPushButton("Subtask");
+                checklistBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
+                connect(checklistBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { editChecklistById(rid); });
+                actions->addWidget(checklistBtn);
+            }
             actions->addWidget(editBtn);
             actions->addWidget(delBtn);
 
@@ -857,6 +2043,7 @@ void MainWindow::refreshUI()
     }
 
     refreshCompletedPreview();
+    updateOverlayContents();
 }
 
 void MainWindow::refreshCompletedPreview()
@@ -866,8 +2053,8 @@ void MainWindow::refreshCompletedPreview()
     const auto &completed = store.completedItems();
     const bool hasCompleted = !completed.isEmpty();
 
-    completedHeaderLabel->setVisible(hasCompleted);
-    completedList->setVisible(hasCompleted);
+    if (completedSection)
+        completedSection->setVisible(hasCompleted);
     viewAllCompletedBtn->setEnabled(hasCompleted);
 
     if (!hasCompleted)
@@ -877,43 +2064,53 @@ void MainWindow::refreshCompletedPreview()
     for (int i = completed.size() - 1; i >= start; --i)
     {
         const CompletedReminder &entry = completed[i];
-
-        auto *row = new QWidget();
-        auto *root = new QHBoxLayout(row);
-        root->setContentsMargins(12, 8, 12, 8);
-        root->setSpacing(12);
-
-        auto *textBox = new QVBoxLayout();
-        textBox->setContentsMargins(0, 0, 0, 0);
-        textBox->setSpacing(2);
-
-        auto *title = new QLabel(completedTitleText(entry));
-        title->setStyleSheet("font-size: 13px; font-weight: 700;");
-
-        auto *meta = new QLabel(
-            QString("%1 | %2")
-                .arg(entry.completedAt.toString("M/d/yyyy h:mm AP"), completedPatternText(entry)));
-        meta->setStyleSheet("font-size: 12px; color: #9f9f9f;");
-
-        textBox->addWidget(title);
-        textBox->addWidget(meta);
-
-        auto *textWrap = new QWidget();
-        textWrap->setLayout(textBox);
-
-        auto *addAgainBtn = new QPushButton("Add Again");
-        addAgainBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
-        connect(addAgainBtn, &QPushButton::clicked, this, [this, completedId = entry.id]()
-                { reAddCompletedReminder(completedId); });
-
-        root->addWidget(textWrap, 1);
-        root->addWidget(addAgainBtn);
+        auto *row = createCompletedEntryRow(
+            completedList,
+            entry,
+            [this, completedId = entry.id]()
+            { reAddCompletedReminder(completedId); });
 
         auto *item = new QListWidgetItem();
         item->setSizeHint(QSize(0, qMax(kCompletedPreviewRowHeight, row->sizeHint().height())));
         completedList->addItem(item);
         completedList->setItemWidget(item, row);
     }
+
+    setCompletedPreviewCollapsed(completedPreviewCollapsed, false);
+}
+
+int MainWindow::completedPreviewExpandedHeight() const
+{
+    return (kCompletedPreviewCount * kCompletedPreviewRowHeight) + kCompletedPreviewListPadding;
+}
+
+void MainWindow::toggleCompletedPreview()
+{
+    setCompletedPreviewCollapsed(!completedPreviewCollapsed, true);
+}
+
+void MainWindow::setCompletedPreviewCollapsed(bool collapsed, bool animate)
+{
+    completedPreviewCollapsed = collapsed;
+    if (!completedPreviewBody || !completedToggleBtn)
+        return;
+
+    completedToggleBtn->setText(collapsed ? "Show" : "Hide");
+    completedToggleBtn->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
+
+    const int targetHeight = collapsed ? 0 : completedPreviewExpandedHeight();
+    if (!completedPreviewAnim || !animate || !completedPreviewBody->isVisible())
+    {
+        if (completedPreviewAnim)
+            completedPreviewAnim->stop();
+        completedPreviewBody->setMaximumHeight(targetHeight);
+        return;
+    }
+
+    completedPreviewAnim->stop();
+    completedPreviewAnim->setStartValue(completedPreviewBody->maximumHeight());
+    completedPreviewAnim->setEndValue(targetHeight);
+    completedPreviewAnim->start();
 }
 
 void MainWindow::showAllCompletedDialog()
@@ -937,37 +2134,11 @@ void MainWindow::showAllCompletedDialog()
     for (int i = completed.size() - 1; i >= 0; --i)
     {
         const CompletedReminder &entry = completed[i];
-
-        auto *row = new QWidget();
-        auto *layout = new QHBoxLayout(row);
-        layout->setContentsMargins(12, 8, 12, 8);
-        layout->setSpacing(12);
-
-        auto *textBox = new QVBoxLayout();
-        textBox->setContentsMargins(0, 0, 0, 0);
-        textBox->setSpacing(2);
-
-        auto *title = new QLabel(completedTitleText(entry));
-        title->setStyleSheet("font-size: 13px; font-weight: 700;");
-
-        auto *meta = new QLabel(
-            QString("%1 | %2")
-                .arg(entry.completedAt.toString("M/d/yyyy h:mm AP"), completedPatternText(entry)));
-        meta->setStyleSheet("font-size: 12px; color: #9f9f9f;");
-
-        textBox->addWidget(title);
-        textBox->addWidget(meta);
-
-        auto *textWrap = new QWidget();
-        textWrap->setLayout(textBox);
-
-        auto *addAgainBtn = new QPushButton("Add Again");
-        addAgainBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
-        connect(addAgainBtn, &QPushButton::clicked, this, [this, completedId = entry.id]()
-                { reAddCompletedReminder(completedId); });
-
-        layout->addWidget(textWrap, 1);
-        layout->addWidget(addAgainBtn);
+        auto *row = createCompletedEntryRow(
+            allList,
+            entry,
+            [this, completedId = entry.id]()
+            { reAddCompletedReminder(completedId); });
 
         auto *item = new QListWidgetItem();
         item->setSizeHint(QSize(0, qMax(kCompletedPreviewRowHeight, row->sizeHint().height())));
@@ -1002,12 +2173,14 @@ void MainWindow::reAddCompletedReminder(const QString &completedId)
             reminder.scheduleType = ScheduleType::Relative;
             reminder.intervalSeconds = interval;
             reminder.nextLocal = QDateTime::currentDateTime().addSecs(interval);
+            reminder.repeatWeekdaysMask = 0;
         }
         else
         {
             reminder.scheduleType = ScheduleType::AtTimeOfDay;
             reminder.timeOfDay = entry.timeOfDay.isValid() ? entry.timeOfDay : QTime::currentTime();
-            reminder.nextLocal = nextAtTimeLocal(reminder.timeOfDay);
+            reminder.repeatWeekdaysMask = WeekdayUtils::normalizeMask(entry.repeatWeekdaysMask);
+            reminder.nextLocal = nextAtTimeLocal(reminder.timeOfDay, reminder.repeatWeekdaysMask);
             reminder.intervalSeconds = 0;
         }
 
@@ -1045,10 +2218,12 @@ void MainWindow::appendCompletedReminder(const Reminder &reminder)
     {
         const int interval = (reminder.intervalSeconds > 0) ? reminder.intervalSeconds : kDefaultReminderStepSeconds;
         completed.intervalSeconds = interval;
+        completed.repeatWeekdaysMask = 0;
     }
     else
     {
         completed.timeOfDay = reminder.timeOfDay;
+        completed.repeatWeekdaysMask = WeekdayUtils::normalizeMask(reminder.repeatWeekdaysMask);
     }
 
     completedItems.push_back(completed);
@@ -1088,6 +2263,84 @@ void MainWindow::updateCountdownLabels()
     }
 }
 
+void MainWindow::updateOverlayContents()
+{
+    if (!overlayRowsLayout || !overlayBody)
+        return;
+
+    clearLayoutItems(overlayRowsLayout);
+
+    const auto &items = store.items();
+    if (items.isEmpty())
+    {
+        auto *emptyLabel = new QLabel("No remaining tasks.", overlayBody);
+        emptyLabel->setStyleSheet("color: #a7a7a7; font-size: 13px; padding-top: 4px;");
+        emptyLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        emptyLabel->installEventFilter(this);
+        overlayRowsLayout->addWidget(emptyLabel);
+        overlayRowsLayout->addStretch(1);
+        return;
+    }
+
+    const int visibleCount = qMin(items.size(), kOverlayMaxVisibleTasks);
+    const QDateTime now = QDateTime::currentDateTime();
+    const int overlayWidth = overlayWindow ? overlayWindow->width() : kOverlayDefaultWidthPx;
+    const OverlayLayoutMetrics layout = computeOverlayLayoutMetrics(overlayWidth);
+    for (int i = 0; i < visibleCount; ++i)
+    {
+        overlayRowsLayout->addWidget(createOverlayReminderRow(items[i], now, layout, overlayBody, this));
+        if (i < visibleCount - 1)
+            overlayRowsLayout->addSpacing(7);
+    }
+
+    if (items.size() > visibleCount)
+    {
+        overlayRowsLayout->addSpacing(4);
+        auto *moreLabel = new QLabel(QString("+%1 more task(s) not shown").arg(items.size() - visibleCount), overlayBody);
+        moreLabel->setStyleSheet("color: #a7a7a7; font-size: 12px;");
+        moreLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        moreLabel->installEventFilter(this);
+        overlayRowsLayout->addWidget(moreLabel);
+    }
+
+    overlayRowsLayout->addStretch(1);
+}
+
+void MainWindow::setOverlayVisible(bool visible)
+{
+    overlayVisible = visible;
+
+    if (overlayToggle && overlayToggle->isChecked() != visible)
+        overlayToggle->setChecked(visible);
+
+    if (!overlayWindow)
+        return;
+
+    if (!visible)
+    {
+        overlayDragging = false;
+        overlayWindow->hide();
+        return;
+    }
+
+    updateOverlayContents();
+    overlayWindow->show();
+    overlayWindow->raise();
+}
+
+void MainWindow::queueNextPopupDisplay()
+{
+    if (popupAdvanceQueued)
+        return;
+
+    popupAdvanceQueued = true;
+    QTimer::singleShot(kPopupTransitionDelayMs, this, [this]()
+                       {
+                           popupAdvanceQueued = false;
+                           showNextQueuedPopup();
+                       });
+}
+
 void MainWindow::triggerDueReminders()
 {
     const auto &items = store.items();
@@ -1099,20 +2352,60 @@ void MainWindow::triggerDueReminders()
     {
         if (reminder.nextLocal > now)
             continue;
-        if (activePopups.contains(reminder.id))
+        if (reminder.id == activePopupId)
+            continue;
+        if (queuedPopupIds.contains(reminder.id))
             continue;
 
-        activePopups.insert(reminder.id);
-        if (isVisible())
-            WinFocus::bringToFront(this);
+        queuedPopupIds.push_back(reminder.id);
+    }
 
-        auto *popup = new ReminderPopup(reminder.id, reminder.title, reminder.nextLocal, nullptr);
+    queueNextPopupDisplay();
+}
+
+void MainWindow::showNextQueuedPopup()
+{
+    if (activePopup)
+        return;
+
+    if (!activePopupId.isEmpty())
+        activePopupId.clear();
+
+    const auto &items = store.items();
+    if (items.isEmpty())
+        return;
+
+    const QDateTime now = QDateTime::currentDateTime();
+
+    while (!queuedPopupIds.isEmpty())
+    {
+        const QString reminderId = queuedPopupIds.takeFirst();
+        const Reminder *reminder = findReminderById(items, reminderId);
+        if (!reminder)
+            continue;
+        if (reminder->nextLocal > now)
+            continue;
+
+        activePopupId = reminderId;
+
+        auto *popup = new ReminderPopup(reminder->id, reminder->title, reminder->nextLocal, nullptr);
         popup->setAttribute(Qt::WA_DeleteOnClose);
+        activePopup = popup;
+
+        connect(popup, &QObject::destroyed, this, [this]()
+                {
+                    activePopup = nullptr;
+                    if (activePopupId.isEmpty())
+                        queueNextPopupDisplay();
+                });
         connect(popup, &ReminderPopup::okPressed, this, &MainWindow::handlePopupOk);
         connect(popup, &ReminderPopup::snoozePressed, this, &MainWindow::handlePopupSnooze);
-
         popup->show();
-        WinFocus::bringToFront(popup);
+        QTimer::singleShot(0, popup, [popup]()
+                           { WinFocus::bringToFront(popup); });
+        QTimer::singleShot(kPopupRefocusDelayMs, popup, [popup]()
+                           { WinFocus::bringToFront(popup); });
+        break;
     }
 }
 
@@ -1128,8 +2421,12 @@ void MainWindow::handlePopupSnooze(const QString &id)
         break;
     }
 
-    activePopups.remove(id);
+    queuedPopupIds.removeAll(id);
+    if (activePopupId == id)
+        activePopupId.clear();
+
     commitReminderChanges();
+    queueNextPopupDisplay();
 }
 
 void MainWindow::handlePopupOk(const QString &id)
@@ -1150,13 +2447,18 @@ void MainWindow::handlePopupOk(const QString &id)
         }
         else
         {
+            reminder.resetChecklist();
             rescheduleAfterAcknowledge(reminder, now);
         }
         break;
     }
 
-    activePopups.remove(id);
+    queuedPopupIds.removeAll(id);
+    if (activePopupId == id)
+        activePopupId.clear();
+
     commitReminderChanges();
+    queueNextPopupDisplay();
 }
 
 void MainWindow::saveStoreBestEffort()
