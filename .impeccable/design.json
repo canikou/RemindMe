@@ -1,0 +1,742 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T14:04:42+00:00",
+  "title": "Design System: RemindMe",
+  "platform": "Native Windows desktop, Qt6 Widgets. Tokens live in src/theme.cpp (ThemePalette) and are substituted into one app-wide Qt style sheet; snippets below are HTML/CSS approximations for preview only. pt sizes are converted at 96 DPI (1pt = 1.333px).",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Cool Ground",
+        "canonical": "#F3F4F7",
+        "oklch": "oklch(96.7% 0.004 271)",
+        "tonalRamp": [
+          "oklch(15% 0.004 271)",
+          "oklch(26% 0.004 271)",
+          "oklch(38% 0.004 271)",
+          "oklch(49% 0.004 271)",
+          "oklch(61% 0.004 271)",
+          "oklch(72% 0.004 271)",
+          "oklch(84% 0.004 271)",
+          "oklch(95% 0.004 271)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#FFFFFF",
+        "oklch": "oklch(100.0% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "surface-alt": {
+        "role": "neutral",
+        "displayName": "Paper Hover",
+        "canonical": "#F7F8FA",
+        "oklch": "oklch(97.9% 0.003 265)",
+        "tonalRamp": [
+          "oklch(15% 0.003 265)",
+          "oklch(26% 0.003 265)",
+          "oklch(38% 0.003 265)",
+          "oklch(49% 0.003 265)",
+          "oklch(61% 0.003 265)",
+          "oklch(72% 0.003 265)",
+          "oklch(84% 0.003 265)",
+          "oklch(95% 0.003 265)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Edge",
+        "canonical": "#DDE1E8",
+        "oklch": "oklch(90.9% 0.010 262)",
+        "tonalRamp": [
+          "oklch(15% 0.010 262)",
+          "oklch(26% 0.010 262)",
+          "oklch(38% 0.010 262)",
+          "oklch(49% 0.010 262)",
+          "oklch(61% 0.010 262)",
+          "oklch(72% 0.010 262)",
+          "oklch(84% 0.010 262)",
+          "oklch(95% 0.010 262)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#ECEEF2",
+        "oklch": "oklch(94.9% 0.006 265)",
+        "tonalRamp": [
+          "oklch(15% 0.006 265)",
+          "oklch(26% 0.006 265)",
+          "oklch(38% 0.006 265)",
+          "oklch(49% 0.006 265)",
+          "oklch(61% 0.006 265)",
+          "oklch(72% 0.006 265)",
+          "oklch(84% 0.006 265)",
+          "oklch(95% 0.006 265)"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#16213A",
+        "oklch": "oklch(25.1% 0.050 265)",
+        "tonalRamp": [
+          "oklch(15% 0.050 265)",
+          "oklch(26% 0.050 265)",
+          "oklch(38% 0.050 265)",
+          "oklch(49% 0.050 265)",
+          "oklch(61% 0.050 265)",
+          "oklch(72% 0.050 265)",
+          "oklch(84% 0.050 265)",
+          "oklch(95% 0.050 265)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Slate",
+        "canonical": "#566075",
+        "oklch": "oklch(48.8% 0.036 265)",
+        "tonalRamp": [
+          "oklch(15% 0.036 265)",
+          "oklch(26% 0.036 265)",
+          "oklch(38% 0.036 265)",
+          "oklch(49% 0.036 265)",
+          "oklch(61% 0.036 265)",
+          "oklch(72% 0.036 265)",
+          "oklch(84% 0.036 265)",
+          "oklch(95% 0.036 265)"
+        ]
+      },
+      "board": {
+        "role": "primary",
+        "displayName": "Departure Board Navy",
+        "canonical": "#16213A",
+        "oklch": "oklch(25.1% 0.050 265)",
+        "tonalRamp": [
+          "oklch(15% 0.050 265)",
+          "oklch(26% 0.050 265)",
+          "oklch(38% 0.050 265)",
+          "oklch(49% 0.050 265)",
+          "oklch(61% 0.050 265)",
+          "oklch(72% 0.050 265)",
+          "oklch(84% 0.050 265)",
+          "oklch(95% 0.050 265)"
+        ]
+      },
+      "board-raised": {
+        "role": "primary",
+        "displayName": "Raised Board Navy",
+        "canonical": "#22305A",
+        "oklch": "oklch(32.0% 0.077 268)",
+        "tonalRamp": [
+          "oklch(15% 0.077 268)",
+          "oklch(26% 0.077 268)",
+          "oklch(38% 0.077 268)",
+          "oklch(49% 0.077 268)",
+          "oklch(61% 0.077 268)",
+          "oklch(72% 0.077 268)",
+          "oklch(84% 0.077 268)",
+          "oklch(95% 0.077 268)"
+        ]
+      },
+      "board-text": {
+        "role": "neutral",
+        "displayName": "Board White",
+        "canonical": "#FFFFFF",
+        "oklch": "oklch(100.0% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "board-muted": {
+        "role": "neutral",
+        "displayName": "Board Slate",
+        "canonical": "#B4BED2",
+        "oklch": "oklch(80.0% 0.030 264)",
+        "tonalRamp": [
+          "oklch(15% 0.030 264)",
+          "oklch(26% 0.030 264)",
+          "oklch(38% 0.030 264)",
+          "oklch(49% 0.030 264)",
+          "oklch(61% 0.030 264)",
+          "oklch(72% 0.030 264)",
+          "oklch(84% 0.030 264)",
+          "oklch(95% 0.030 264)"
+        ]
+      },
+      "accent": {
+        "role": "secondary",
+        "displayName": "Departure Amber",
+        "canonical": "#F5C84B",
+        "oklch": "oklch(85.0% 0.147 89)",
+        "tonalRamp": [
+          "oklch(15% 0.147 89)",
+          "oklch(26% 0.147 89)",
+          "oklch(38% 0.147 89)",
+          "oklch(49% 0.147 89)",
+          "oklch(61% 0.147 89)",
+          "oklch(72% 0.147 89)",
+          "oklch(84% 0.147 89)",
+          "oklch(95% 0.147 89)"
+        ]
+      },
+      "due-text": {
+        "role": "secondary",
+        "displayName": "Due Amber",
+        "canonical": "#8A6100",
+        "oklch": "oklch(52.2% 0.108 80)",
+        "tonalRamp": [
+          "oklch(15% 0.108 80)",
+          "oklch(26% 0.108 80)",
+          "oklch(38% 0.108 80)",
+          "oklch(49% 0.108 80)",
+          "oklch(61% 0.108 80)",
+          "oklch(72% 0.108 80)",
+          "oklch(84% 0.108 80)",
+          "oklch(95% 0.108 80)"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "canonical": "#B3261E",
+        "oklch": "oklch(50.1% 0.178 29)",
+        "tonalRamp": [
+          "oklch(15% 0.150 29)",
+          "oklch(26% 0.150 29)",
+          "oklch(38% 0.150 29)",
+          "oklch(49% 0.150 29)",
+          "oklch(61% 0.150 29)",
+          "oklch(72% 0.150 29)",
+          "oklch(84% 0.150 29)",
+          "oklch(95% 0.150 29)"
+        ]
+      },
+      "focus": {
+        "role": "tertiary",
+        "displayName": "Focus Blue",
+        "canonical": "#3B6FD8",
+        "oklch": "oklch(56.3% 0.171 262)",
+        "tonalRamp": [
+          "oklch(15% 0.150 262)",
+          "oklch(26% 0.150 262)",
+          "oklch(38% 0.150 262)",
+          "oklch(49% 0.150 262)",
+          "oklch(61% 0.150 262)",
+          "oklch(72% 0.150 262)",
+          "oklch(84% 0.150 262)",
+          "oklch(95% 0.150 262)"
+        ]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Primary Navy",
+        "canonical": "#16213A",
+        "oklch": "oklch(25.1% 0.050 265)",
+        "tonalRamp": [
+          "oklch(15% 0.050 265)",
+          "oklch(26% 0.050 265)",
+          "oklch(38% 0.050 265)",
+          "oklch(49% 0.050 265)",
+          "oklch(61% 0.050 265)",
+          "oklch(72% 0.050 265)",
+          "oklch(84% 0.050 265)",
+          "oklch(95% 0.050 265)"
+        ]
+      },
+      "primary-hover": {
+        "role": "primary",
+        "displayName": "Primary Navy Hover",
+        "canonical": "#22305A",
+        "oklch": "oklch(32.0% 0.077 268)",
+        "tonalRamp": [
+          "oklch(15% 0.077 268)",
+          "oklch(26% 0.077 268)",
+          "oklch(38% 0.077 268)",
+          "oklch(49% 0.077 268)",
+          "oklch(61% 0.077 268)",
+          "oklch(72% 0.077 268)",
+          "oklch(84% 0.077 268)",
+          "oklch(95% 0.077 268)"
+        ]
+      },
+      "primary-text": {
+        "role": "neutral",
+        "displayName": "Primary Text",
+        "canonical": "#FFFFFF",
+        "oklch": "oklch(100.0% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "ground-dark": {
+        "role": "neutral",
+        "displayName": "Cool Ground (dark mode)",
+        "canonical": "#10141C",
+        "oklch": "oklch(19.1% 0.017 264)",
+        "tonalRamp": [
+          "oklch(15% 0.017 264)",
+          "oklch(26% 0.017 264)",
+          "oklch(38% 0.017 264)",
+          "oklch(49% 0.017 264)",
+          "oklch(61% 0.017 264)",
+          "oklch(72% 0.017 264)",
+          "oklch(84% 0.017 264)",
+          "oklch(95% 0.017 264)"
+        ]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Paper (dark mode)",
+        "canonical": "#171C26",
+        "oklch": "oklch(22.6% 0.021 264)",
+        "tonalRamp": [
+          "oklch(15% 0.021 264)",
+          "oklch(26% 0.021 264)",
+          "oklch(38% 0.021 264)",
+          "oklch(49% 0.021 264)",
+          "oklch(61% 0.021 264)",
+          "oklch(72% 0.021 264)",
+          "oklch(84% 0.021 264)",
+          "oklch(95% 0.021 264)"
+        ]
+      },
+      "surface-alt-dark": {
+        "role": "neutral",
+        "displayName": "Paper Hover (dark mode)",
+        "canonical": "#1C2230",
+        "oklch": "oklch(25.3% 0.028 266)",
+        "tonalRamp": [
+          "oklch(15% 0.028 266)",
+          "oklch(26% 0.028 266)",
+          "oklch(38% 0.028 266)",
+          "oklch(49% 0.028 266)",
+          "oklch(61% 0.028 266)",
+          "oklch(72% 0.028 266)",
+          "oklch(84% 0.028 266)",
+          "oklch(95% 0.028 266)"
+        ]
+      },
+      "border-dark": {
+        "role": "neutral",
+        "displayName": "Edge (dark mode)",
+        "canonical": "#2C3446",
+        "oklch": "oklch(32.6% 0.034 266)",
+        "tonalRamp": [
+          "oklch(15% 0.034 266)",
+          "oklch(26% 0.034 266)",
+          "oklch(38% 0.034 266)",
+          "oklch(49% 0.034 266)",
+          "oklch(61% 0.034 266)",
+          "oklch(72% 0.034 266)",
+          "oklch(84% 0.034 266)",
+          "oklch(95% 0.034 266)"
+        ]
+      },
+      "rule-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark mode)",
+        "canonical": "#232A39",
+        "oklch": "oklch(28.5% 0.029 265)",
+        "tonalRamp": [
+          "oklch(15% 0.029 265)",
+          "oklch(26% 0.029 265)",
+          "oklch(38% 0.029 265)",
+          "oklch(49% 0.029 265)",
+          "oklch(61% 0.029 265)",
+          "oklch(72% 0.029 265)",
+          "oklch(84% 0.029 265)",
+          "oklch(95% 0.029 265)"
+        ]
+      },
+      "text-dark": {
+        "role": "neutral",
+        "displayName": "Ink (dark mode)",
+        "canonical": "#E8ECF4",
+        "oklch": "oklch(94.2% 0.012 265)",
+        "tonalRamp": [
+          "oklch(15% 0.012 265)",
+          "oklch(26% 0.012 265)",
+          "oklch(38% 0.012 265)",
+          "oklch(49% 0.012 265)",
+          "oklch(61% 0.012 265)",
+          "oklch(72% 0.012 265)",
+          "oklch(84% 0.012 265)",
+          "oklch(95% 0.012 265)"
+        ]
+      },
+      "muted-dark": {
+        "role": "neutral",
+        "displayName": "Slate (dark mode)",
+        "canonical": "#A3ACBE",
+        "oklch": "oklch(74.3% 0.028 264)",
+        "tonalRamp": [
+          "oklch(15% 0.028 264)",
+          "oklch(26% 0.028 264)",
+          "oklch(38% 0.028 264)",
+          "oklch(49% 0.028 264)",
+          "oklch(61% 0.028 264)",
+          "oklch(72% 0.028 264)",
+          "oklch(84% 0.028 264)",
+          "oklch(95% 0.028 264)"
+        ]
+      },
+      "board-dark": {
+        "role": "primary",
+        "displayName": "Departure Board Navy (dark mode)",
+        "canonical": "#1B2742",
+        "oklch": "oklch(27.6% 0.053 265)",
+        "tonalRamp": [
+          "oklch(15% 0.053 265)",
+          "oklch(26% 0.053 265)",
+          "oklch(38% 0.053 265)",
+          "oklch(49% 0.053 265)",
+          "oklch(61% 0.053 265)",
+          "oklch(72% 0.053 265)",
+          "oklch(84% 0.053 265)",
+          "oklch(95% 0.053 265)"
+        ]
+      },
+      "board-raised-dark": {
+        "role": "primary",
+        "displayName": "Raised Board Navy (dark mode)",
+        "canonical": "#26355A",
+        "oklch": "oklch(33.5% 0.068 266)",
+        "tonalRamp": [
+          "oklch(15% 0.068 266)",
+          "oklch(26% 0.068 266)",
+          "oklch(38% 0.068 266)",
+          "oklch(49% 0.068 266)",
+          "oklch(61% 0.068 266)",
+          "oklch(72% 0.068 266)",
+          "oklch(84% 0.068 266)",
+          "oklch(95% 0.068 266)"
+        ]
+      },
+      "due-text-dark": {
+        "role": "secondary",
+        "displayName": "Due Amber (dark mode)",
+        "canonical": "#F5C84B",
+        "oklch": "oklch(85.0% 0.147 89)",
+        "tonalRamp": [
+          "oklch(15% 0.147 89)",
+          "oklch(26% 0.147 89)",
+          "oklch(38% 0.147 89)",
+          "oklch(49% 0.147 89)",
+          "oklch(61% 0.147 89)",
+          "oklch(72% 0.147 89)",
+          "oklch(84% 0.147 89)",
+          "oklch(95% 0.147 89)"
+        ]
+      },
+      "danger-dark": {
+        "role": "tertiary",
+        "displayName": "Signal Red (dark mode)",
+        "canonical": "#FF8A80",
+        "oklch": "oklch(75.9% 0.144 26)",
+        "tonalRamp": [
+          "oklch(15% 0.144 26)",
+          "oklch(26% 0.144 26)",
+          "oklch(38% 0.144 26)",
+          "oklch(49% 0.144 26)",
+          "oklch(61% 0.144 26)",
+          "oklch(72% 0.144 26)",
+          "oklch(84% 0.144 26)",
+          "oklch(95% 0.144 26)"
+        ]
+      },
+      "focus-dark": {
+        "role": "tertiary",
+        "displayName": "Focus Blue (dark mode)",
+        "canonical": "#7EA6FF",
+        "oklch": "oklch(73.4% 0.137 265)",
+        "tonalRamp": [
+          "oklch(15% 0.137 265)",
+          "oklch(26% 0.137 265)",
+          "oklch(38% 0.137 265)",
+          "oklch(49% 0.137 265)",
+          "oklch(61% 0.137 265)",
+          "oklch(72% 0.137 265)",
+          "oklch(84% 0.137 265)",
+          "oklch(95% 0.137 265)"
+        ]
+      },
+      "primary-dark": {
+        "role": "primary",
+        "displayName": "Primary Navy (dark mode)",
+        "canonical": "#2B3D66",
+        "oklch": "oklch(36.6% 0.075 265)",
+        "tonalRamp": [
+          "oklch(15% 0.075 265)",
+          "oklch(26% 0.075 265)",
+          "oklch(38% 0.075 265)",
+          "oklch(49% 0.075 265)",
+          "oklch(61% 0.075 265)",
+          "oklch(72% 0.075 265)",
+          "oklch(84% 0.075 265)",
+          "oklch(95% 0.075 265)"
+        ]
+      },
+      "primary-hover-dark": {
+        "role": "primary",
+        "displayName": "Primary Navy Hover (dark mode)",
+        "canonical": "#364B7D",
+        "oklch": "oklch(42.0% 0.088 266)",
+        "tonalRamp": [
+          "oklch(15% 0.088 266)",
+          "oklch(26% 0.088 266)",
+          "oklch(38% 0.088 266)",
+          "oklch(49% 0.088 266)",
+          "oklch(61% 0.088 266)",
+          "oklch(72% 0.088 266)",
+          "oklch(84% 0.088 266)",
+          "oklch(95% 0.088 266)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Board Countdown",
+        "purpose": "The next departure's countdown on the board (boardCountdown)."
+      },
+      "display-idle": {
+        "displayName": "Idle Countdown",
+        "purpose": "Countdown slot with no upcoming reminder, in Board Slate (boardCountdownIdle)."
+      },
+      "headline": {
+        "displayName": "Popup Title",
+        "purpose": "Reminder title in the due popup's board card (popupTitle)."
+      },
+      "headline-due": {
+        "displayName": "Popup Due",
+        "purpose": "Due state in the popup body, Due Amber (popupDue)."
+      },
+      "title": {
+        "displayName": "Board Title",
+        "purpose": "Next reminder's title on the board (boardTitle)."
+      },
+      "cell-title": {
+        "displayName": "Cell Title",
+        "purpose": "Timetable reminder titles and countdowns (cellTitle, cellCountdown; cellDue at 700)."
+      },
+      "cell-figure": {
+        "displayName": "Cell Time",
+        "purpose": "Departure time in the Time column (cellTime)."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "App default font; secondary cells (cellMuted)."
+      },
+      "hint": {
+        "displayName": "Hint",
+        "purpose": "Input preview, errors, board greeting and meta (hint, error, boardMuted)."
+      },
+      "label": {
+        "displayName": "Caps Label",
+        "purpose": "Column headers and section headings via makeCapsLabel(); uppercase."
+      },
+      "overlay-figure-next": {
+        "displayName": "Overlay Next Figure",
+        "purpose": "Next row countdown in the overlay, amber."
+      },
+      "overlay-figure": {
+        "displayName": "Overlay Figure",
+        "purpose": "Other overlay countdowns, white."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "completed-slide",
+        "value": "180ms QEasingCurve::OutCubic on maximumHeight",
+        "purpose": "Recently done preview collapse/expand. The only animation in the system."
+      }
+    ],
+    "breakpoints": [],
+    "focus": [
+      {
+        "name": "focus-default",
+        "value": "1px solid {colors.focus}",
+        "purpose": "Inputs, buttons, row actions; checkbox hover border."
+      },
+      {
+        "name": "focus-board",
+        "value": "1px solid {colors.accent}",
+        "purpose": "Buttons inside QFrame#board."
+      }
+    ],
+    "qtMechanisms": [
+      "Dynamic role property selectors, e.g. QLabel[role=\"cellDue\"]; change at runtime with setRole() (unpolish + polish).",
+      "objectName selectors: QFrame#board, QFrame#popupBoard, QPushButton#primaryButton, QDialog#reminderPopup, QWidget#overlayWindow.",
+      "Placeholder colour set twice: QSS placeholder-text-color and QPalette::PlaceholderText.",
+      "Checkbox tick images: :/theme/check-white.png (light), :/theme/check-ink.png (dark).",
+      "Theme source: HKCU ...\\Themes\\Personalize AppsUseLightTheme; override REMINDME_THEME=light|dark."
+    ],
+    "knownGaps": [
+      "Tabular figures are not set explicitly.",
+      "No DWM caption colour; the title bar stays system default.",
+      "No motion when a row becomes due.",
+      "Light QComboBox drop-down shows a platform-default edge."
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "QPushButton#primaryButton. One per surface: Add, Done.",
+      "html": "<button class=\"ds-btn-primary\">Add</button>",
+      "css": ".ds-btn-primary { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 13px; font-weight: 600; background: #16213A; color: #FFFFFF; border: 1px solid #16213A; border-radius: 6px; padding: 8px 20px; } .ds-btn-primary:hover { background: #22305A; border-color: #22305A; } .ds-btn-primary:focus-visible { outline: none; border-color: #3B6FD8; }"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Plain QPushButton: Snooze 5 min, Save, Cancel.",
+      "html": "<button class=\"ds-btn\">Snooze 5 min</button>",
+      "css": ".ds-btn { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 13px; background: #FFFFFF; color: #16213A; border: 1px solid #DDE1E8; border-radius: 6px; padding: 7px 14px; } .ds-btn:hover { background: #F7F8FA; } .ds-btn:active { background: #ECEEF2; } .ds-btn:focus-visible { outline: none; border-color: #3B6FD8; }"
+    },
+    {
+      "name": "Row Actions",
+      "kind": "button",
+      "refersTo": "button-row-action",
+      "description": "role=rowAction / rowDanger: quiet per-row Edit and Delete.",
+      "html": "<span class=\"ds-row-actions\"><button class=\"ds-row-action\">Edit</button><button class=\"ds-row-action ds-row-danger\">Delete</button></span>",
+      "css": ".ds-row-actions { display: inline-flex; gap: 2px; } .ds-row-action { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 13px; background: transparent; color: #566075; border: 1px solid transparent; border-radius: 6px; padding: 5px 10px; } .ds-row-action:hover { background: #F7F8FA; border-color: #DDE1E8; color: #16213A; } .ds-row-danger:hover { color: #B3261E; } .ds-row-action:focus-visible { outline: none; border-color: #3B6FD8; }"
+    },
+    {
+      "name": "Natural-language Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "QLineEdit docked at the bottom with the live 'Understood as' hint.",
+      "html": "<div class=\"ds-dock\"><input class=\"ds-input\" placeholder=\"What and when? e.g. Drink water in 45m\"><p class=\"ds-hint\">Understood as <b>Water plants</b> · first today at 2:43 PM · repeats daily. Press Enter to add.</p></div>",
+      "css": ".ds-dock { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; width: 420px; } .ds-input { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; width: 100%; box-sizing: border-box; font-size: 13px; background: #FFFFFF; color: #16213A; border: 1px solid #DDE1E8; border-radius: 6px; padding: 7px 10px; } .ds-input::placeholder { color: #566075; } .ds-input:focus { outline: none; border-color: #3B6FD8; } .ds-hint { margin: 6px 0 0; font-size: 12px; color: #566075; } .ds-hint b { font-weight: 700; color: #566075; }"
+    },
+    {
+      "name": "Departures Board Header",
+      "kind": "custom",
+      "refersTo": "board-header",
+      "description": "Signature navy band: greeting and clock, next title, amber countdown.",
+      "html": "<div class=\"ds-board\"><div class=\"ds-board-bar\"><span class=\"ds-board-muted\">Good afternoon! · 1:58:28 PM</span><span><button class=\"ds-board-btn\">Overlay</button><button class=\"ds-board-btn\">History</button><button class=\"ds-board-btn\">More</button></span></div><div class=\"ds-board-next\"><div><div class=\"ds-board-title\">Stand up and stretch</div><div class=\"ds-board-muted\">Today, 2:17 PM · Every 2 hours</div></div><div class=\"ds-board-count\">18:38</div></div></div>",
+      "css": ".ds-board { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; background: #16213A; color: #FFFFFF; padding: 14px 20px 22px 24px; width: 640px; } .ds-board-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; } .ds-board-muted { color: #B4BED2; font-size: 12px; } .ds-board-btn { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 13px; background: transparent; color: #FFFFFF; border: 1px solid transparent; border-radius: 6px; padding: 6px 12px; } .ds-board-btn:hover { background: #22305A; } .ds-board-btn:focus-visible { outline: none; border-color: #F5C84B; } .ds-board-next { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; } .ds-board-title { font-size: 25px; font-weight: 600; margin-bottom: 2px; } .ds-board-count { font-size: 53px; font-weight: 600; color: #F5C84B; line-height: 1; }"
+    },
+    {
+      "name": "Departure Row",
+      "kind": "card",
+      "refersTo": "departure-row",
+      "description": "Timetable rows on hairline rules; a due row's Due-in cell turns amber.",
+      "html": "<div class=\"ds-table\"><div class=\"ds-row\"><div class=\"ds-c-time\">1:58 PM<small>Today</small></div><div class=\"ds-c-title\">Stand up and stretch</div><div class=\"ds-c-rep\">Every 2 hours</div><div class=\"ds-c-due ds-due\">Due now</div></div><div class=\"ds-row\"><div class=\"ds-c-time\">4:02 PM<small>Today</small></div><div class=\"ds-c-title\">Call the dentist</div><div class=\"ds-c-rep\">Once</div><div class=\"ds-c-due\">2:03:59</div></div></div>",
+      "css": ".ds-table { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; width: 600px; background: #FFFFFF; border: 1px solid #DDE1E8; border-radius: 8px; color: #16213A; } .ds-row { display: flex; gap: 12px; padding: 12px 8px 12px 16px; border-bottom: 1px solid #ECEEF2; } .ds-c-time { width: 112px; font-size: 15px; } .ds-c-time small { display: block; font-size: 13px; color: #566075; } .ds-c-title { flex: 1; font-size: 15px; font-weight: 600; } .ds-c-rep { width: 168px; font-size: 13px; color: #566075; } .ds-c-due { width: 104px; text-align: right; font-size: 15px; font-weight: 600; } .ds-due { color: #8A6100; font-weight: 700; }"
+    },
+    {
+      "name": "Column Header",
+      "kind": "custom",
+      "refersTo": "label",
+      "description": "makeCapsLabel(): uppercase, 8pt, 700, 108% tracking. Column headers and a section's own heading only.",
+      "html": "<div class=\"ds-cols\"><span>Time</span><span>Reminder</span><span>Repeats</span><span>Due in</span></div>",
+      "css": ".ds-cols { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; display: flex; gap: 12px; padding-left: 17px; width: 600px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #566075; } .ds-cols span:nth-child(1) { width: 112px; } .ds-cols span:nth-child(2) { flex: 1; } .ds-cols span:nth-child(3) { width: 168px; } .ds-cols span:nth-child(4) { width: 104px; text-align: right; padding-right: 8px; }"
+    },
+    {
+      "name": "Overlay Panel",
+      "kind": "custom",
+      "refersTo": "overlay-panel",
+      "description": "Always-on-top mini board: ruled rows, next row larger in amber.",
+      "html": "<div class=\"ds-ov\"><div class=\"ds-ov-row ds-ov-next\"><span>Stand up and stretch</span><b>18:39</b></div><div class=\"ds-ov-row\"><span>Call the dentist about...</span><b>2:03:57</b></div><div class=\"ds-ov-row\"><span>Take vitamins<small>Subtasks 1/3 done</small></span><b>5:47:57</b></div></div>",
+      "css": ".ds-ov { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; width: 280px; box-sizing: border-box; background: #16213A; border: 1px solid #22305A; border-radius: 10px; padding: 2px 14px; color: #FFFFFF; } .ds-ov-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 8px 0; border-top: 1px solid #22305A; font-size: 13px; } .ds-ov-row:first-child { border-top: none; } .ds-ov-row b { font-size: 15px; font-weight: 700; } .ds-ov-row small { display: block; font-size: 11px; color: #B4BED2; } .ds-ov-next { padding: 10px 0; font-size: 15px; font-weight: 600; } .ds-ov-next b { font-size: 21px; color: #F5C84B; }"
+    },
+    {
+      "name": "Due Popup",
+      "kind": "card",
+      "refersTo": "popup-board",
+      "description": "The one loud moment: board card, due state in amber, Snooze and Done.",
+      "html": "<div class=\"ds-pop\"><div class=\"ds-pop-board\"><div class=\"ds-pop-title\">Stand up and stretch</div><div class=\"ds-pop-meta\">Due today at 1:56 PM</div></div><div class=\"ds-pop-body\"><div class=\"ds-pop-due\">Due 1 min ago</div><div class=\"ds-pop-clock\">It's 1:58 PM</div><div class=\"ds-pop-btns\"><button class=\"ds-pop-btn\">Snooze 5 min</button><button class=\"ds-pop-btn ds-pop-primary\">Done</button></div></div></div>",
+      "css": ".ds-pop { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; width: 460px; background: #F3F4F7; } .ds-pop-board { background: #16213A; color: #FFFFFF; padding: 22px 28px 24px; } .ds-pop-title { font-size: 29px; font-weight: 600; } .ds-pop-meta { font-size: 15px; color: #B4BED2; margin-top: 6px; } .ds-pop-body { padding: 18px 28px 22px; } .ds-pop-due { font-size: 27px; font-weight: 600; color: #8A6100; } .ds-pop-clock { font-size: 13px; color: #566075; margin-top: 8px; } .ds-pop-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; } .ds-pop-btn { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 16px; background: #FFFFFF; color: #16213A; border: 1px solid #DDE1E8; border-radius: 6px; padding: 10px 18px; } .ds-pop-btn:hover { background: #F7F8FA; } .ds-pop-primary { background: #16213A; color: #FFFFFF; border-color: #16213A; font-weight: 600; } .ds-pop-primary:hover { background: #22305A; } .ds-pop-btn:focus-visible { outline: none; border-color: #3B6FD8; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Departures Board",
+    "overview": "**Creative North Star: \"The Departures Board\"**\n\nRemindMe reads like a station timetable. A deep navy board band carries the next departure: its title, its when/repeat line, and an amber countdown that is the biggest thing on screen. Below it, the rest of the reminders wait in a plain white (or ink) timetable with fixed columns for Time, Reminder, Repeats and Due in, separated by hairline rules. The same board material reappears twice, and only twice: as the always-on-top overlay panel and as the head of the due popup.\n\nThe world is calm at rest and loud only at the moment of departure. Density is moderate, set by a fixed column grid rather than by cards. Everything is flat: depth comes from the one navy mass against a cool light ground (or a near-black blue ground in dark mode), never from shadows. Typography is Segoe UI throughout, so the app sits natively on Windows; hierarchy is carried by size and weight alone.\n\nThis is a native Qt6 Widgets app, not a web page. Every token below lives in `src/theme.cpp` as a `ThemePalette` field (declared in `include/remindme/theme.hpp`) and is substituted into one app-wide Qt style sheet through `@token` placeholders. Widgets opt into a style through a dynamic `role` property (`QLabel[role=\"cellDue\"]`) or an `objectName` (`QFrame#board`, `QPushButton#primaryButton`). The palette follows the Windows `AppsUseLightTheme` registry value, with `REMINDME_THEME=light|dark` as an override.",
+    "keyCharacteristics": [
+      "One navy board band per surface, carrying the next reminder.",
+      "Amber marks the next countdown and \"Due now\", nothing else.",
+      "Timetable rows on 1px hairline rules, with fixed-width columns.",
+      "Flat: no shadows anywhere; depth is tonal.",
+      "Segoe UI only; size and weight carry hierarchy.",
+      "Two complete palettes (light and dark) with identical roles."
+    ],
+    "rules": [
+      {
+        "name": "The Amber Departure Rule",
+        "body": "Amber appears only on the next departure's countdown and on \"Due now\". With no upcoming reminder, the board countdown slot drops to `board-muted` at weight 300 (`boardCountdownIdle`). Ordinary countdowns in the table stay ink.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Ambers Rule",
+        "body": "Use `accent` on navy and `due-text` on the ground or table. Never put `accent` on a light surface; it fails contrast there.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Board Rule",
+        "body": "Each surface carries at most one navy board mass: the header band, the overlay panel, or the popup card. Navy is never used for table rows or ordinary cards.",
+        "section": "colors"
+      },
+      {
+        "name": "The Loudest Number Rule",
+        "body": "The next countdown is always the largest type on its surface. Nothing else on the board exceeds 19pt.",
+        "section": "typography"
+      },
+      {
+        "name": "The Column Header Rule",
+        "body": "Uppercase tracked labels name table columns or head a section's own list. They never sit above a larger heading as an eyebrow.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Board Rule",
+        "body": "Separate layers with tone and 1px lines, never with drop shadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** add every new colour as a `ThemePalette` field with a light and a dark value, plus a `@token` entry in `Theme::styleSheet()`. List longer token names before their prefixes (`@surfaceAlt` before `@surface`).",
+      "**Do** style new widgets through a `role` property or an `objectName` selector in the app style sheet, not through per-widget `setStyleSheet` colours.",
+      "**Do** keep Departure Amber for the next countdown and \"Due now\" only (The Amber Departure Rule).",
+      "**Do** build uppercase labels with `makeCapsLabel()` (8pt, 700, 108% spacing), and only for column headers or a section's own heading.",
+      "**Do** keep the timetable's fixed column widths shared between the header row and the data rows, so the columns line up.",
+      "**Do** use 1px borders and hairline rules for separation, with 6px corners on controls.",
+      "**Do** keep transparent 1px borders on borderless buttons so focus and hover do not shift the layout."
+    ],
+    "donts": [
+      "**Don't** put `accent` amber on a light surface; use `due-text` there (The Two Ambers Rule).",
+      "**Don't** add drop shadows or gradients; the system is flat (The Flat Board Rule).",
+      "**Don't** add a second navy mass to a surface that already has a board, or use navy for rows and cards.",
+      "**Don't** set a type size on a surface larger than its countdown (The Loudest Number Rule).",
+      "**Don't** put an uppercase tracked kicker or eyebrow above a title. The unused `boardLabel` role in `theme.cpp` is not part of the system.",
+      "**Don't** use a second filled primary button on one surface.",
+      "**Don't** introduce another font family; Segoe UI Variable Text with Segoe UI fallback is the only face."
+    ]
+  }
+}
