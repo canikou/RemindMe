@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
                 input->setText("Water plants in 45m every day");
                 settle(100);
                 ok &= saveGrab(&window, QDir(outDir).filePath("main-typing-" + suffix + ".png"));
-                input->setText("Water plants tomorrow");
+                input->setText("Water plants sometime");
                 QMetaObject::invokeMethod(input, "returnPressed");
                 settle(100);
                 ok &= saveGrab(&window, QDir(outDir).filePath("main-error-" + suffix + ".png"));
