@@ -854,8 +854,7 @@ int main()
     }
     if (!testParseDateTime())
     {
-        std::cerr << "testParseDateTime failed
-";
+        std::cerr << "testParseDateTime failed\n";
         return 1;
     }
     if (!testParseTimeAmPmBoundaries())
