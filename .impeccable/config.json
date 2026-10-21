@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/canon.html"
+        ],
+        "createdAt": "2026-10-21T13:26:03.432Z",
+        "reason": "agent decision: spent, unshipped decision-round sketch; the 2px bottom border imitates the Fluent text-field underline"
+      }
+    ]
+  }
+}

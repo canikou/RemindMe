@@ -23,19 +23,25 @@ QString TimeFormat::formatCountdown(qint64 secondsRemaining)
     qint64 minutes = secondsRemaining / 60;
     qint64 seconds = secondsRemaining % 60;
 
+    // No zero-padded leading unit: 18:30, 2:03:48, 3d 20:49:59.
     if (days > 0)
     {
         return QString("%1d %2:%3:%4")
             .arg(days)
-            .arg(twoDigits(hours))
+            .arg(hours)
             .arg(twoDigits(minutes))
             .arg(twoDigits(seconds));
     }
 
-    return QString("%1:%2:%3")
-        .arg(twoDigits(hours))
-        .arg(twoDigits(minutes))
-        .arg(twoDigits(seconds));
+    if (hours > 0)
+    {
+        return QString("%1:%2:%3")
+            .arg(hours)
+            .arg(twoDigits(minutes))
+            .arg(twoDigits(seconds));
+    }
+
+    return QString("%1:%2").arg(minutes).arg(twoDigits(seconds));
 }
 
 QString TimeFormat::formatDueDateTime(const QDateTime &dateTime)

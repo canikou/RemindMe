@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Redesign: departures board
+
+- New look built like a departures board: a navy board up top shows the next reminder and a large amber countdown, with the rest listed below in Time / Reminder / Repeats / Due in columns.
+- Follows the Windows light/dark app setting, and switches live when it changes.
+- As you type, a live "Understood as …" line shows what will be scheduled and when, before you press Enter.
+- Export, Import and Check for updates moved into a **More** menu on the board. Overlay and History stay one click away.
+- The due popup is now a board card ("Due today at 1:22 PM") with **Done** and **Snooze 5 min**.
+- The overlay matches the board, and the next reminder's countdown is highlighted.
+- "Recently done" starts collapsed so the list gets the room.
+- Rows reaching zero show **Due now**.
+
+### Technical
+
+- New `Theme` module (`src/theme.cpp`) holds both palettes and the app-wide style sheet; widgets use `role` properties instead of inline colours.
+- CI renders the main window, overlay and popup in both themes (`RemindMe_ui_screenshots`) and uploads them as a build artifact.
+
 ## 1.2.4 - 2026-10-21
 
 ### User Experience

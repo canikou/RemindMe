@@ -1,7 +1,9 @@
 #include "remindme/theme.hpp"
 
 #include <QApplication>
+#include <QColor>
 #include <QFont>
+#include <QPalette>
 #include <QSettings>
 
 #include <utility>
@@ -96,6 +98,11 @@ void Theme::apply(bool dark)
     font.setPointSize(10);
     QApplication::setFont(font);
 
+    // Style sheets can't reach placeholder text; the palette can.
+    QPalette palette = QApplication::palette();
+    palette.setColor(QPalette::PlaceholderText, QColor(currentPalette().muted));
+    QApplication::setPalette(palette);
+
     if (auto *app = qobject_cast<QApplication *>(QApplication::instance()))
         app->setStyleSheet(styleSheet(currentPalette()));
 }
@@ -138,7 +145,7 @@ QCheckBox { color: @text; spacing: 8px; }
 QCheckBox[role="subtask"] { color: @muted; }
 QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid @muted; border-radius: 3px; background: @surface; }
 QCheckBox::indicator:hover { border-color: @focus; }
-QCheckBox::indicator:checked { background: @focus; border-color: @focus; }
+QCheckBox::indicator:checked { background: @text; border-color: @text; }
 
 QListWidget { background: @surface; border: 1px solid @border; border-radius: 8px; outline: none; }
 QListWidget::item { border-bottom: 1px solid @rule; }
@@ -154,8 +161,6 @@ QMenu::item { padding: 6px 22px 6px 14px; border-radius: 4px; }
 QMenu::item:selected { background: @surfaceAlt; }
 QMenu::separator { height: 1px; background: @rule; margin: 4px 6px; }
 
-QProgressBar { border: none; background: @rule; border-radius: 3px; }
-QProgressBar::chunk { background: @focus; border-radius: 3px; }
 
 QLabel[role="muted"] { color: @muted; }
 QLabel[role="hint"] { color: @muted; font-size: 9pt; }
@@ -187,13 +192,13 @@ QFrame#board QPushButton:disabled { color: @boardMuted; }
 QFrame#board QToolButton::menu-indicator { image: none; width: 0; }
 
 QWidget#overlayWindow { background: transparent; }
-QFrame[role="overlayRow"] { background: @board; border: 1px solid @boardRaised; border-radius: 8px; }
-QFrame[role="overlayRow"] QLabel { background: transparent; border: none; }
-QFrame[role="overlayRow"] QLabel[role="overlayTitle"] { color: @boardText; font-weight: 600; }
-QFrame[role="overlayRow"] QLabel[role="overlayTime"] { color: @boardText; font-weight: 700; }
-QFrame[role="overlayRow"] QLabel[role="overlayTimeNext"] { color: @accent; font-weight: 700; }
-QFrame[role="overlayRow"] QLabel[role="overlayMeta"] { color: @boardMuted; font-size: 8pt; }
-QLabel[role="overlayNote"] { color: @boardMuted; background: @board; border-radius: 6px; padding: 6px 10px; font-size: 9pt; }
+QFrame[role="overlayPanel"] { background: @board; border: 1px solid @boardRaised; border-radius: 10px; }
+QFrame[role="overlayPanel"] QLabel { background: transparent; border: none; }
+QFrame[role="overlayRule"] { background: @boardRaised; border: none; }
+QLabel[role="overlayTitle"] { color: @boardText; }
+QLabel[role="overlayTime"] { color: @boardText; }
+QLabel[role="overlayTimeNext"] { color: @accent; }
+QLabel[role="overlayMeta"] { color: @boardMuted; font-size: 8pt; }
 
 QDialog#reminderPopup { background: @ground; }
 QFrame#popupBoard { background: @board; border: none; }
@@ -201,8 +206,8 @@ QFrame#popupBoard QLabel { color: @boardText; background: transparent; }
 QFrame#popupBoard QLabel[role="boardLabel"] { color: @accent; font-size: 9pt; font-weight: 700; }
 QFrame#popupBoard QLabel[role="boardMuted"] { color: @boardMuted; font-size: 11pt; }
 QFrame#popupBoard QLabel[role="popupTitle"] { color: @boardText; font-size: 22pt; font-weight: 600; }
-QLabel[role="popupClock"] { color: @text; font-size: 28pt; font-weight: 300; }
-QLabel[role="popupOverdue"] { color: @danger; font-size: 11pt; font-weight: 700; }
+QLabel[role="popupDue"] { color: @dueText; font-size: 20pt; font-weight: 600; }
+QLabel[role="popupClock"] { color: @muted; font-size: 10pt; }
 QDialog#reminderPopup QPushButton { font-size: 12pt; padding: 10px 18px; }
 )";
 

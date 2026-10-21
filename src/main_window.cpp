@@ -41,7 +41,6 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPropertyAnimation>
-#include <QProgressBar>
 #include <QProcess>
 #include <QPushButton>
 #include <QRandomGenerator>
@@ -91,8 +90,8 @@ constexpr int kOverlayDefaultWidthPx = 280;
 constexpr int kOverlayDefaultHeightPx = 380;
 constexpr int kOverlayRootMarginPx = 0;
 constexpr int kOverlayPanelMarginPx = 0;
-constexpr int kOverlayRowPaddingLeftPx = 8;
-constexpr int kOverlayRowPaddingRightPx = 8;
+constexpr int kOverlayRowPaddingLeftPx = 14;
+constexpr int kOverlayRowPaddingRightPx = 14;
 constexpr int kOverlayRowBorderPx = 2;
 constexpr int kOverlayRowLayoutSafetyPx = 4;
 constexpr int kOverlayTitleGapPx = 6;
@@ -100,9 +99,10 @@ constexpr int kOverlayMinTitleColumnWidthPx = 108;
 constexpr int kOverlayMinTimerColumnWidthPx = 72;
 constexpr int kOverlayMaxTimerColumnWidthPx = 132;
 constexpr int kOverlayTitleInnerPaddingRightPx = 8;
-constexpr int kOverlayTimerFontPixelSize = 14;
+constexpr int kOverlayTimerFontPixelSize = 15;
+constexpr int kOverlayNextTimerFontPixelSize = 21;
 constexpr int kOverlayTextWidthSafetyPx = 6;
-constexpr double kOverlayTitleColumnRatio = 0.65;
+constexpr double kOverlayTitleColumnRatio = 0.56;
 constexpr const char *kGreetingFileName = "greetings.txt";
 constexpr const char *kGreetingStateMarkerFileName = ".greetings_initialized";
 constexpr int kUpdateStartupDelayMs = 2500;
@@ -510,46 +510,6 @@ OverlayLayoutMetrics computeOverlayLayoutMetrics(int overlayWindowWidth)
     return metrics;
 }
 
-int overlayTitleFontSize(const QString &title, int titleWidthPx)
-{
-    QFont largeFont;
-    largeFont.setPixelSize(16);
-    largeFont.setBold(true);
-    if (QFontMetrics(largeFont).horizontalAdvance(title) <= titleWidthPx)
-        return 16;
-
-    QFont mediumFont;
-    mediumFont.setPixelSize(14);
-    mediumFont.setBold(true);
-    if (QFontMetrics(mediumFont).horizontalAdvance(title) <= titleWidthPx)
-        return 14;
-
-    return 13;
-}
-
-QString fitOverlayTitleText(const QString &rawTitle, int fontSizePx, int titleWidthPx)
-{
-    const QString title = rawTitle.simplified();
-    const QString normalized = title.isEmpty() ? "(Untitled)" : title;
-
-    QFont titleFont;
-    titleFont.setPixelSize(fontSizePx);
-    titleFont.setBold(true);
-    const QFontMetrics metrics(titleFont);
-
-    if (metrics.horizontalAdvance(normalized) <= titleWidthPx)
-        return normalized;
-
-    const int approxCharsPerLine = qBound(8, titleWidthPx / qMax(6, metrics.averageCharWidth()), 30);
-    int splitPos = normalized.lastIndexOf(' ', approxCharsPerLine);
-    if (splitPos <= 0 || splitPos >= normalized.size() - 1)
-        return metrics.elidedText(normalized, Qt::ElideRight, titleWidthPx);
-
-    const QString firstLine = metrics.elidedText(normalized.left(splitPos).trimmed(), Qt::ElideRight, titleWidthPx);
-    const QString secondLine = metrics.elidedText(normalized.mid(splitPos + 1).trimmed(), Qt::ElideRight, titleWidthPx);
-    return firstLine + "\n" + secondLine;
-}
-
 QString twoDigitsText(qint64 value)
 {
     return QString("%1").arg(value, 2, 10, QChar('0'));
@@ -562,9 +522,21 @@ QString overlayDayToken(qint64 days)
     return QString("%1d").arg(days);
 }
 
-QString fitOverlayCountdownText(qint64 secondsRemaining, int timerColumnWidthPx)
+QFont overlayTimerFont(int pixelSize)
+{
+    QFont timerFont;
+    timerFont.setFamilies({"Segoe UI Variable Text", "Segoe UI"});
+    timerFont.setPixelSize(pixelSize);
+    timerFont.setBold(true);
+    return timerFont;
+}
+
+QString fitOverlayCountdownText(qint64 secondsRemaining, int timerColumnWidthPx, int pixelSize)
 {
     const qint64 clampedSeconds = qMax<qint64>(0, secondsRemaining);
+    if (clampedSeconds == 0)
+        return "Due now";
+
     qint64 remaining = clampedSeconds;
     const qint64 days = remaining / 86400;
     remaining %= 86400;
@@ -572,56 +544,30 @@ QString fitOverlayCountdownText(qint64 secondsRemaining, int timerColumnWidthPx)
     remaining %= 3600;
     const qint64 minutes = remaining / 60;
 
-    const QString fullText = TimeFormat::formatCountdown(clampedSeconds);
     QStringList candidates;
-    candidates.push_back(fullText);
-
+    candidates.push_back(TimeFormat::formatCountdown(clampedSeconds));
     if (days > 0)
     {
-        candidates.push_back(QString("%1 %2:%3")
-                                 .arg(overlayDayToken(days))
-                                 .arg(twoDigitsText(hours))
-                                 .arg(twoDigitsText(minutes)));
+        candidates.push_back(QString("%1 %2:%3").arg(overlayDayToken(days)).arg(hours).arg(twoDigitsText(minutes)));
+        candidates.push_back(QString("%1 %2h").arg(overlayDayToken(days)).arg(hours));
         candidates.push_back(overlayDayToken(days));
     }
-    else
+    else if (hours > 0)
     {
-        candidates.push_back(QString("%1:%2")
-                                 .arg(twoDigitsText(hours))
-                                 .arg(twoDigitsText(minutes)));
+        candidates.push_back(QString("%1h %2m").arg(hours).arg(minutes));
+        candidates.push_back(QString("%1h").arg(hours));
     }
-
     candidates.push_back(QString("%1m").arg((clampedSeconds + 59) / 60));
-    candidates.push_back(QString("%1s").arg(clampedSeconds));
 
-    // Must match overlayTimerFont() so the measured fit is the rendered fit.
-    QFont timerFont;
-    timerFont.setFamilies({"Segoe UI Variable Text", "Segoe UI"});
-    timerFont.setPixelSize(kOverlayTimerFontPixelSize);
-    timerFont.setBold(true);
-    const QFontMetrics metrics(timerFont);
+    // Measured with the font the label renders in, so the fit is the rendered fit.
+    const QFontMetrics metrics(overlayTimerFont(pixelSize));
     const int maxTextWidthPx = qMax(24, timerColumnWidthPx - kOverlayTextWidthSafetyPx);
     for (const QString &candidate : candidates)
     {
         if (metrics.horizontalAdvance(candidate) <= maxTextWidthPx)
             return candidate;
     }
-
-    const QString fallback = candidates.back();
-    const int perCharPx = qMax(1, metrics.horizontalAdvance(QLatin1Char('8')));
-    const int maxChars = qMax(2, maxTextWidthPx / perCharPx);
-    if (fallback.size() <= maxChars)
-        return fallback;
-    return fallback.left(qMax(1, maxChars - 1)) + "+";
-}
-
-QFont overlayTimerFont()
-{
-    QFont timerFont;
-    timerFont.setFamilies({"Segoe UI Variable Text", "Segoe UI"});
-    timerFont.setPixelSize(kOverlayTimerFontPixelSize);
-    timerFont.setBold(true);
-    return timerFont;
+    return candidates.back();
 }
 
 void setRole(QWidget *widget, const char *role)
@@ -634,6 +580,7 @@ void setRole(QWidget *widget, const char *role)
     widget->style()->polish(widget);
 }
 
+// One row of the overlay's single board panel: title left, countdown right, next row larger in amber.
 QWidget *createOverlayReminderRow(
     const Reminder &reminder,
     const QDateTime &now,
@@ -642,48 +589,35 @@ QWidget *createOverlayReminderRow(
     QWidget *parent,
     QObject *eventFilterTarget)
 {
-    auto *row = new QFrame(parent);
-    row->setProperty("role", "overlayRow");
-
+    auto *row = new QWidget(parent);
     auto *root = new QVBoxLayout(row);
-    root->setContentsMargins(8, 8, 8, 9);
-    root->setSpacing(4);
+    root->setContentsMargins(0, isNext ? 10 : 8, 0, isNext ? 10 : 8);
+    root->setSpacing(2);
 
     auto *top = new QHBoxLayout();
     top->setContentsMargins(0, 0, 0, 0);
     top->setSpacing(kOverlayTitleGapPx);
 
-    const QString titleRaw = reminder.title.simplified();
-    const int titleFontPx = overlayTitleFontSize(titleRaw, layout.titleColumnWidthPx);
-    const QString titleText = fitOverlayTitleText(titleRaw, titleFontPx, layout.titleColumnWidthPx);
-
-    auto *titleLabel = new QLabel(titleText, row);
+    auto *titleLabel = new QLabel(row);
     titleLabel->setProperty("role", "overlayTitle");
-    titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    titleLabel->setWordWrap(true);
-    titleLabel->setFixedWidth(layout.titleColumnWidthPx);
     QFont titleFont = titleLabel->font();
-    titleFont.setPixelSize(titleFontPx);
-    titleFont.setBold(true);
+    titleFont.setPixelSize(isNext ? 15 : 13);
+    titleFont.setWeight(isNext ? QFont::DemiBold : QFont::Normal);
     titleLabel->setFont(titleFont);
-    const QFontMetrics titleMetrics(titleFont);
-    titleLabel->setMaximumHeight((titleMetrics.lineSpacing() * 2) + 2);
+    titleLabel->setFixedWidth(layout.titleColumnWidthPx);
+    const QString title = reminder.title.simplified().isEmpty() ? QString("(Untitled)") : reminder.title.simplified();
+    titleLabel->setText(QFontMetrics(titleFont).elidedText(title, Qt::ElideRight, layout.titleColumnWidthPx));
+    if (titleLabel->text() != title)
+        titleLabel->setToolTip(title);
 
-    auto *divider = new QFrame(row);
-    divider->setFrameShape(QFrame::NoFrame);
-    divider->setFixedWidth(1);
-    divider->setStyleSheet(QString("background: %1; border: none;").arg(Theme::palette().boardRaised));
-    divider->setFixedHeight(titleLabel->maximumHeight());
-
-    const QString timeText = fitOverlayCountdownText(now.secsTo(reminder.nextLocal), layout.timerColumnWidthPx);
-    auto *timerLabel = new QLabel(timeText, row);
+    const int timerPx = isNext ? kOverlayNextTimerFontPixelSize : kOverlayTimerFontPixelSize;
+    auto *timerLabel = new QLabel(fitOverlayCountdownText(now.secsTo(reminder.nextLocal), layout.timerColumnWidthPx, timerPx), row);
     timerLabel->setProperty("role", isNext ? "overlayTimeNext" : "overlayTime");
     timerLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     timerLabel->setFixedWidth(layout.timerColumnWidthPx);
-    timerLabel->setFont(overlayTimerFont());
+    timerLabel->setFont(overlayTimerFont(timerPx));
 
     top->addWidget(titleLabel, 0, Qt::AlignVCenter);
-    top->addWidget(divider, 0, Qt::AlignVCenter);
     top->addWidget(timerLabel, 0, Qt::AlignVCenter);
     root->addLayout(top);
 
@@ -692,8 +626,6 @@ QWidget *createOverlayReminderRow(
     {
         auto *checklistLabel = new QLabel(checklistText, row);
         checklistLabel->setProperty("role", "overlayMeta");
-        checklistLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        checklistLabel->setFixedWidth(layout.titleColumnWidthPx);
         root->addWidget(checklistLabel, 0, Qt::AlignLeft);
     }
 
@@ -1024,7 +956,9 @@ QString inputPreviewHtml(const QString &text, const QDateTime &now)
         day = day.toLower();
     const QString first = QString("%1 at %2").arg(day, reminder.nextLocal.toString("h:mm AP"));
     return QString("Understood as <b>%1</b>  ·  first %2  ·  %3. Press Enter to add.")
-        .arg(reminder.title.toHtmlEscaped(), first.toHtmlEscaped(), repeatsCellText(reminder).toLower().toHtmlEscaped());
+        .arg(reminder.title.toHtmlEscaped(),
+             first.toHtmlEscaped(),
+             reminder.repeating ? ("repeats " + repeatsCellText(reminder).toLower()).toHtmlEscaped() : QString("one time"));
 }
 
 QLabel *makeCapsLabel(const QString &text, const char *role, QWidget *parent = nullptr)
@@ -1076,20 +1010,9 @@ QWidget *createDepartureRow(
 
     if (!reminder.checklistItems.isEmpty())
     {
-        auto *progressRow = new QHBoxLayout();
-        progressRow->setContentsMargins(0, 2, 0, 0);
-        progressRow->setSpacing(10);
         auto *progressLabel = new QLabel(subtaskProgressText(reminder));
         progressLabel->setProperty("role", "cellMuted");
-        auto *progress = new QProgressBar();
-        progress->setRange(0, reminder.checklistItems.size());
-        progress->setValue(reminder.checkedChecklistCount());
-        progress->setTextVisible(false);
-        progress->setFixedSize(120, 6);
-        progressRow->addWidget(progressLabel);
-        progressRow->addWidget(progress);
-        progressRow->addStretch(1);
-        infoBox->addLayout(progressRow);
+        infoBox->addWidget(progressLabel);
 
         for (int i = 0; i < reminder.checklistItems.size(); ++i)
         {
@@ -1378,14 +1301,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     nextRow->setSpacing(24);
     auto *nextText = new QVBoxLayout();
     nextText->setSpacing(2);
-    boardNextCaption = makeCapsLabel("Next reminder", "boardLabel");
     boardNextTitle = new QLabel();
     boardNextTitle->setProperty("role", "boardTitle");
     boardNextTitle->setWordWrap(true);
     boardNextMeta = new QLabel();
     boardNextMeta->setProperty("role", "boardMuted");
-    nextText->addWidget(boardNextCaption);
-    nextText->addSpacing(2);
     nextText->addWidget(boardNextTitle);
     nextText->addWidget(boardNextMeta);
     boardCountdown = new QLabel();
@@ -2502,7 +2422,6 @@ void MainWindow::updateBoard()
     if (items.isEmpty())
     {
         boardNextId.clear();
-        boardNextCaption->setText("NEXT REMINDER");
         boardNextTitle->setText("Nothing scheduled");
         boardNextMeta->setText("Add one below and it'll show up here.");
         boardCountdown->clear();
@@ -2521,8 +2440,8 @@ void MainWindow::updateBoard()
     const QString day = dueDayText(next.nextLocal, now);
     boardNextMeta->setText(QString("%1, %2  ·  %3")
                                .arg(day, next.nextLocal.toString("h:mm AP"), repeatsCellText(next)));
-    boardNextCaption->setText(secondsLeft <= 0 ? "DUE NOW" : "NEXT REMINDER");
-    boardCountdown->setText(secondsLeft <= 0 ? QString("Now") : TimeFormat::formatCountdown(secondsLeft));
+    // The countdown slot carries the due state; no separate caption.
+    boardCountdown->setText(secondsLeft <= 0 ? QString("Due now") : TimeFormat::formatCountdown(secondsLeft));
     setRole(boardCountdown, "boardCountdown");
 }
 
@@ -2538,39 +2457,52 @@ void MainWindow::updateOverlayContents()
 
     clearLayoutItems(overlayRowsLayout);
 
+    // One board panel; rows are separated by hairline rules, not separate cards.
+    auto *panel = new QFrame(overlayBody);
+    panel->setProperty("role", "overlayPanel");
+    auto *panelLayout = new QVBoxLayout(panel);
+    panelLayout->setContentsMargins(kOverlayRowPaddingLeftPx, 2, kOverlayRowPaddingRightPx, 2);
+    panelLayout->setSpacing(0);
+    panel->installEventFilter(this);
+
     const auto &items = store.items();
     if (items.isEmpty())
     {
-        auto *emptyNote = new QLabel("No upcoming reminders", overlayBody);
-        emptyNote->setProperty("role", "overlayNote");
-        emptyNote->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        auto *emptyNote = new QLabel("No upcoming reminders", panel);
+        emptyNote->setProperty("role", "overlayMeta");
+        emptyNote->setContentsMargins(0, 10, 0, 10);
         emptyNote->installEventFilter(this);
-        overlayRowsLayout->addWidget(emptyNote, 0, Qt::AlignLeft);
-        overlayRowsLayout->addStretch(1);
-        return;
+        panelLayout->addWidget(emptyNote);
     }
-
-    const int visibleCount = qMin(items.size(), kOverlayMaxVisibleTasks);
-    const QDateTime now = QDateTime::currentDateTime();
-    const int overlayWidth = overlayWindow ? overlayWindow->width() : kOverlayDefaultWidthPx;
-    const OverlayLayoutMetrics layout = computeOverlayLayoutMetrics(overlayWidth);
-    for (int i = 0; i < visibleCount; ++i)
+    else
     {
-        overlayRowsLayout->addWidget(createOverlayReminderRow(items[i], now, layout, i == 0, overlayBody, this));
-        if (i < visibleCount - 1)
-            overlayRowsLayout->addSpacing(6);
+        const int visibleCount = qMin(items.size(), kOverlayMaxVisibleTasks);
+        const QDateTime now = QDateTime::currentDateTime();
+        const int overlayWidth = overlayWindow ? overlayWindow->width() : kOverlayDefaultWidthPx;
+        const OverlayLayoutMetrics layout = computeOverlayLayoutMetrics(overlayWidth);
+        for (int i = 0; i < visibleCount; ++i)
+        {
+            if (i > 0)
+            {
+                auto *rule = new QFrame(panel);
+                rule->setProperty("role", "overlayRule");
+                rule->setFixedHeight(1);
+                panelLayout->addWidget(rule);
+            }
+            panelLayout->addWidget(createOverlayReminderRow(items[i], now, layout, i == 0, panel, this));
+        }
+
+        if (items.size() > visibleCount)
+        {
+            auto *moreNote = new QLabel(QString("+%1 more").arg(items.size() - visibleCount), panel);
+            moreNote->setProperty("role", "overlayMeta");
+            moreNote->setContentsMargins(0, 4, 0, 8);
+            moreNote->installEventFilter(this);
+            panelLayout->addWidget(moreNote);
+        }
     }
 
-    if (items.size() > visibleCount)
-    {
-        overlayRowsLayout->addSpacing(6);
-        auto *moreNote = new QLabel(QString("+%1 more").arg(items.size() - visibleCount), overlayBody);
-        moreNote->setProperty("role", "overlayNote");
-        moreNote->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        moreNote->installEventFilter(this);
-        overlayRowsLayout->addWidget(moreNote, 0, Qt::AlignLeft);
-    }
-
+    overlayRowsLayout->addWidget(panel);
     overlayRowsLayout->addStretch(1);
 }
 void MainWindow::setOverlayVisible(bool visible)

@@ -116,8 +116,17 @@ bool extractDate(QString &s, int &year, int &month, int &day)
     static const QRegularExpression isoRe(R"(\b(\d{4})-(\d{1,2})-(\d{1,2})\b)");
     static const QRegularExpression slashRe(R"(\b(\d{1,2})/(\d{1,2})/(\d{4})\b)");
 
+    static const QRegularExpression relativeDayRe(R"(\b(today|tomorrow)\b)", QRegularExpression::CaseInsensitiveOption);
+
     QRegularExpressionMatch m;
-    if ((m = monthDayRe.match(s)).hasMatch())
+    if ((m = relativeDayRe.match(s)).hasMatch())
+    {
+        const QDate date = QDate::currentDate().addDays(m.captured(1).compare("tomorrow", Qt::CaseInsensitive) == 0 ? 1 : 0);
+        year = date.year();
+        month = date.month();
+        day = date.day();
+    }
+    else if ((m = monthDayRe.match(s)).hasMatch())
     {
         month = monthFromName(m.captured(1));
         day = m.captured(2).toInt();
@@ -496,6 +505,13 @@ ParseResult Parser::parseInput(const QString &input)
         }
     }
 
+    // "Water plants tomorrow" with no time: schedule tomorrow at 9:00 AM (the preview states it).
+    static const QRegularExpression bareTomorrowRe(R"(^(.*\S)\s+tomorrow$)", QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression endsWithTimeRe(R"(\d(?::\d{2})?\s*([AaPp][Mm])?$)");
+    const QRegularExpressionMatch bareTomorrow = bareTomorrowRe.match(expression);
+    if (bareTomorrow.hasMatch() && !endsWithTimeRe.match(bareTomorrow.captured(1)).hasMatch())
+        expression = bareTomorrow.captured(1) + " on tomorrow 9:00AM";
+
     QRegularExpressionMatchIterator it = scheduleKeywordRe().globalMatch(expression);
 
     int lastPos = -1;
@@ -519,6 +535,18 @@ ParseResult Parser::parseInput(const QString &input)
 
     QString left = trimmed(expression.left(lastPos));
     QString right = trimmed(expression.mid(lastPos + lastLen));
+
+    // "<title> today|tomorrow at <time>": fold the day into the right-hand side.
+    if (lastKw == "at")
+    {
+        static const QRegularExpression trailingDayRe(R"(^(.*\S)\s+(today|tomorrow)$)", QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch dayMatch = trailingDayRe.match(left);
+        if (dayMatch.hasMatch())
+        {
+            right = right + " " + dayMatch.captured(2);
+            left = trimmed(dayMatch.captured(1));
+        }
+    }
 
     // "<title> at <time> on <date>": fold the time into the right-hand side.
     if (lastKw == "on")

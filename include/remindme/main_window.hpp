@@ -95,7 +95,6 @@ private:
     QPushButton *overlayToggle = nullptr;
     QToolButton *moreBtn = nullptr;
     QFrame *board = nullptr;
-    QLabel *boardNextCaption = nullptr;
     QLabel *boardNextTitle = nullptr;
     QLabel *boardNextMeta = nullptr;
     QLabel *boardCountdown = nullptr;

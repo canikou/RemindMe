@@ -57,6 +57,23 @@ bool testParseDateTime()
     if (!c.ok || c.date != QDate(2099, 12, 5) || c.timeOfDay != QTime(20, 0))
         return false;
 
+    const QDate tomorrow = QDate::currentDate().addDays(1);
+    const remindme::ParseResult d = remindme::Parser::parseInput("Water plants tomorrow");
+    if (!d.ok || d.title != "Water plants" || d.date != tomorrow || d.timeOfDay != QTime(9, 0))
+        return false;
+
+    const remindme::ParseResult e = remindme::Parser::parseInput("Call mom tomorrow at 7pm");
+    if (!e.ok || e.title != "Call mom" || e.date != tomorrow || e.timeOfDay != QTime(19, 0))
+        return false;
+
+    const remindme::ParseResult f = remindme::Parser::parseInput("Call mom at 7pm tomorrow");
+    if (!f.ok || f.title != "Call mom" || f.date != tomorrow || f.timeOfDay != QTime(19, 0))
+        return false;
+
+    const remindme::ParseResult g = remindme::Parser::parseInput("Turn on lights tomorrow");
+    if (!g.ok || g.title != "Turn on lights" || g.date != tomorrow)
+        return false;
+
     return !remindme::Parser::parseInput("old on january 1, 2000 6:30AM").ok &&
            !remindme::Parser::parseInput("x on feb 30, 2099 6:30AM").ok &&
            !remindme::Parser::parseInput("x on october 24, 2099").ok &&

@@ -4,7 +4,6 @@
 
 #include <QCloseEvent>
 #include <QDateTime>
-#include <QFont>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -41,12 +40,6 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
     boardLayout->setContentsMargins(28, 22, 28, 24);
     boardLayout->setSpacing(6);
 
-    auto *caption = new QLabel("REMINDER");
-    caption->setProperty("role", "boardLabel");
-    QFont captionFont = caption->font();
-    captionFont.setLetterSpacing(QFont::PercentageSpacing, 108);
-    caption->setFont(captionFont);
-
     titleLabel = new QLabel(m_title);
     titleLabel->setProperty("role", "popupTitle");
     titleLabel->setWordWrap(true);
@@ -56,7 +49,6 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
                                          : m_dueLocal.toString("'Due' ddd, MMM d 'at' h:mm AP"));
     dueLabel->setProperty("role", "boardMuted");
 
-    boardLayout->addWidget(caption);
     boardLayout->addWidget(titleLabel);
     boardLayout->addWidget(dueLabel);
     root->addWidget(boardCard);
@@ -65,15 +57,15 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
     body->setContentsMargins(28, 18, 28, 22);
     body->setSpacing(8);
 
+    // Lead with the due state; the clock is secondary.
+    overdueLabel = new QLabel();
+    overdueLabel->setProperty("role", "popupDue");
+
     timeLabel = new QLabel();
     timeLabel->setProperty("role", "popupClock");
 
-    overdueLabel = new QLabel();
-    overdueLabel->setProperty("role", "popupOverdue");
-    overdueLabel->hide();
-
-    body->addWidget(timeLabel);
     body->addWidget(overdueLabel);
+    body->addWidget(timeLabel);
     body->addStretch(1);
 
     auto *btnRow = new QHBoxLayout();
@@ -106,18 +98,16 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
 void ReminderPopup::onTick()
 {
     const QDateTime now = QDateTime::currentDateTime();
-    timeLabel->setText(QString("It's %1").arg(TimeFormat::formatClockTime(now)));
+    timeLabel->setText(QString("It's %1").arg(now.toString("h:mm AP")));
 
     const qint64 overdueSeconds = m_dueLocal.secsTo(now);
-    if (overdueSeconds >= kOverdueDisplayThresholdSeconds)
-    {
-        overdueLabel->setText(TimeFormat::formatOverdueText(overdueSeconds));
-        overdueLabel->show();
-    }
+    const qint64 overdueMinutes = overdueSeconds / 60;
+    if (overdueSeconds < kOverdueDisplayThresholdSeconds)
+        overdueLabel->setText("Due now");
+    else if (overdueMinutes < 60)
+        overdueLabel->setText(QString("Due %1 min ago").arg(overdueMinutes));
     else
-    {
-        overdueLabel->hide();
-    }
+        overdueLabel->setText(QString("Due %1 h %2 min ago").arg(overdueMinutes / 60).arg(overdueMinutes % 60));
 
     updateWindowTitle(overdueSeconds);
 }
