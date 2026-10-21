@@ -12,6 +12,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QThread>
 #include <QTimer>
@@ -196,6 +197,15 @@ int main(int argc, char *argv[])
             settle();
             ok &= saveGrab(&popup, QDir(outDir).filePath("popup-" + suffix + ".png"));
             popup.hide();
+
+            // The updater's prompts are plain QMessageBoxes; they must stay legible in both themes.
+            QMessageBox updateBox(QMessageBox::Question, "Update available",
+                                  "A new version (v9.9.9) is available.\nCurrent version: 1.3.0.\n\nDo you want to download and install it now?",
+                                  QMessageBox::Yes | QMessageBox::No, &window);
+            updateBox.show();
+            settle();
+            ok &= saveGrab(&updateBox, QDir(outDir).filePath("update-prompt-" + suffix + ".png"));
+            updateBox.hide();
         }
 
         const std::pair<const char *, Scene> boardScenes[] = {

@@ -37,6 +37,9 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override = default;
 
+    // Shows and focuses the window; used when another launch asks the running copy to appear.
+    void showFromTray();
+
 protected:
     void closeEvent(QCloseEvent *e) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -50,7 +53,6 @@ private slots:
 
 private:
     void setupSystemTray();
-    void showFromTray();
     void quitFromTray();
     void maybeCheckForUpdatesOnStartup();
     void checkForUpdates(bool userInitiated);

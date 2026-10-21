@@ -1588,6 +1588,9 @@ void MainWindow::closeEvent(QCloseEvent *e)
 
     saveStoreBestEffort();
     QMainWindow::closeEvent(e);
+    // The app no longer quits on its last window (a closing popup must not end it), so quit here.
+    if (e->isAccepted())
+        QCoreApplication::quit();
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
