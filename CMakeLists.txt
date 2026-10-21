@@ -83,6 +83,7 @@ target_include_directories(${CORE_TARGET}
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+target_sources(${CORE_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/resources/theme.qrc")
 target_compile_features(${CORE_TARGET} PUBLIC cxx_std_23)
 project_apply_default_build_options(${CORE_TARGET})
 

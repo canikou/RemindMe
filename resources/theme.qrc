@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/theme">
+        <file alias="check-white.png">theme/check-white.png</file>
+        <file alias="check-ink.png">theme/check-ink.png</file>
+    </qresource>
+</RCC>

@@ -8,6 +8,12 @@
 
 #include <utility>
 
+// Q_INIT_RESOURCE must run at global scope; the core library is static.
+static void initThemeResources()
+{
+    Q_INIT_RESOURCE(theme);
+}
+
 namespace remindme
 {
 
@@ -91,6 +97,7 @@ const ThemePalette &Theme::palette()
 
 void Theme::apply(bool dark)
 {
+    initThemeResources();
     currentPalette() = dark ? makeDark() : makeLight();
 
     QFont font = QApplication::font();
@@ -146,7 +153,7 @@ QCheckBox { color: @text; spacing: 8px; }
 QCheckBox[role="subtask"] { color: @muted; }
 QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid @muted; border-radius: 3px; background: @surface; }
 QCheckBox::indicator:hover { border-color: @focus; }
-QCheckBox::indicator:checked { background: @text; border-color: @text; }
+QCheckBox::indicator:checked { background: @text; border-color: @text; image: url(@checkImage); }
 
 QListWidget { background: @surface; border: 1px solid @border; border-radius: 8px; outline: none; }
 QListWidget::item { border-bottom: 1px solid @rule; }
@@ -232,6 +239,7 @@ QDialog#reminderPopup QPushButton { font-size: 12pt; padding: 10px 18px; }
         {"@primaryText", &p.primaryText},
         {"@primary", &p.primary},
     };
+    css.replace("@checkImage", p.dark ? ":/theme/check-ink.png" : ":/theme/check-white.png");
     // Longer token names come before their prefixes (e.g. @surfaceAlt before @surface).
     for (const auto &[token, value] : tokens)
         css.replace(QString::fromLatin1(token), *value);

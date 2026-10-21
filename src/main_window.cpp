@@ -1135,8 +1135,9 @@ struct EditReminderValues
 bool showEditReminderDialog(QWidget *parent, const Reminder &reminder, EditReminderValues &out)
 {
     QDialog dialog(parent);
-    dialog.setWindowTitle("Edit Reminder");
+    dialog.setWindowTitle("Edit reminder");
     dialog.setModal(true);
+    dialog.setMinimumWidth(440);
 
     auto *root = new QVBoxLayout(&dialog);
     auto *form = new QFormLayout();
