@@ -10,7 +10,7 @@ Current version: `v1.2.3`.
 - Repeat scheduling via interval syntax (`every 2 hours`) and weekday syntax (`every weekdays`, `every Mon-Fri`, `every Monday through Friday`).
 - Integer math support in duration input (for example `(3*10) minutes`).
 - Repeating reminder subtasks with progress tracking and per-cycle reset.
-- Popup notifications with `Snooze (5 min.)` and `OK`.
+- Popup notifications with `Snooze 5 min` and `Done` (Esc snoozes).
 - Closing a reminder popup with `X` behaves the same as pressing `OK`.
 - Single-instance guard prevents duplicate app processes.
 - System tray runtime behavior keeps timers active when the main window is closed.
