@@ -606,8 +606,24 @@ QWidget *createOverlayReminderRow(
     titleLabel->setFont(titleFont);
     titleLabel->setFixedWidth(layout.titleColumnWidthPx);
     const QString title = reminder.title.simplified().isEmpty() ? QString("(Untitled)") : reminder.title.simplified();
-    titleLabel->setText(QFontMetrics(titleFont).elidedText(title, Qt::ElideRight, layout.titleColumnWidthPx));
-    if (titleLabel->text() != title)
+    const QFontMetrics titleMetrics(titleFont);
+    if (isNext && titleMetrics.horizontalAdvance(title) > layout.titleColumnWidthPx)
+    {
+        // The next reminder is the one name a glance needs: give it two lines, elide only the second.
+        int split = title.lastIndexOf(' ');
+        while (split > 0 && titleMetrics.horizontalAdvance(title.left(split)) > layout.titleColumnWidthPx)
+            split = title.lastIndexOf(' ', split - 1);
+        if (split > 0)
+            titleLabel->setText(title.left(split) + "\n" +
+                                titleMetrics.elidedText(title.mid(split + 1), Qt::ElideRight, layout.titleColumnWidthPx));
+        else
+            titleLabel->setText(titleMetrics.elidedText(title, Qt::ElideRight, layout.titleColumnWidthPx));
+    }
+    else
+    {
+        titleLabel->setText(titleMetrics.elidedText(title, Qt::ElideRight, layout.titleColumnWidthPx));
+    }
+    if (titleLabel->text().replace('\n', ' ') != title)
         titleLabel->setToolTip(title);
 
     const int timerPx = isNext ? kOverlayNextTimerFontPixelSize : kOverlayTimerFontPixelSize;

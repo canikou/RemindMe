@@ -14,6 +14,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QThread>
+#include <QTimer>
 #include <QUuid>
 
 #include <iostream>
@@ -38,7 +39,7 @@ Reminder makeReminder(const QString &title, qint64 secondsFromNow, bool repeatin
     return r;
 }
 
-bool writeSampleData(bool withReminders)
+bool writeSampleData(bool withReminders, bool firstIsDue = false)
 {
     remindme::ReminderStore store;
     QString err;
@@ -48,7 +49,7 @@ bool writeSampleData(bool withReminders)
 
     if (withReminders)
     {
-        store.items().push_back(makeReminder("Stand up and stretch", 18 * 60 + 42, true, 2 * 3600));
+        store.items().push_back(makeReminder("Stand up and stretch", firstIsDue ? -20 : 18 * 60 + 42, true, 2 * 3600));
         Reminder meds = makeReminder("Take vitamins", 5 * 3600 + 48 * 60, true, 0, 0b0011111);
         meds.checklistItems = {{"Vitamin D", true}, {"Fish oil", false}, {"Refill water bottle", false}};
         store.items().push_back(meds);
@@ -135,12 +136,32 @@ int main(int argc, char *argv[])
                 input->setText("Water plants in 45m every day");
                 settle(100);
                 ok &= saveGrab(&window, QDir(outDir).filePath("main-typing-" + suffix + ".png"));
+                input->setText("Water plants tomorrow");
+                settle(100);
+                ok &= saveGrab(&window, QDir(outDir).filePath("main-tomorrow-" + suffix + ".png"));
                 input->setText("Water plants sometime");
                 QMetaObject::invokeMethod(input, "returnPressed");
                 settle(100);
                 ok &= saveGrab(&window, QDir(outDir).filePath("main-error-" + suffix + ".png"));
                 input->clear();
             }
+
+            // The edit dialog is modal: grab and dismiss it from inside its event loop.
+            for (QPushButton *button : window.findChildren<QPushButton *>())
+            {
+                if (button->text() != "Edit")
+                    continue;
+                QTimer::singleShot(500, [&ok, outDir, suffix]()
+                                   {
+                                       if (QWidget *dialog = QApplication::activeModalWidget())
+                                       {
+                                           ok &= saveGrab(dialog, QDir(outDir).filePath("edit-dialog-" + suffix + ".png"));
+                                           QMetaObject::invokeMethod(dialog, "reject");
+                                       } });
+                button->click();
+                break;
+            }
+            settle(100);
 
             for (QPushButton *button : window.findChildren<QPushButton *>())
             {
@@ -162,6 +183,22 @@ int main(int argc, char *argv[])
             settle();
             ok &= saveGrab(&popup, QDir(outDir).filePath("popup-" + suffix + ".png"));
             popup.hide();
+        }
+
+        if (!writeSampleData(true, true))
+            return 1;
+        {
+            remindme::MainWindow window;
+            window.resize(1020, 700);
+            window.show();
+            settle(800);
+            ok &= saveGrab(&window, QDir(outDir).filePath("main-due-" + suffix + ".png"));
+            // The due reminder opens its own popup; hide it without acting on it.
+            for (QWidget *top : QApplication::topLevelWidgets())
+            {
+                if (top->objectName() == "reminderPopup" || top->objectName() == "overlayWindow")
+                    top->hide();
+            }
         }
 
         if (!writeSampleData(false))

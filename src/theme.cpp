@@ -118,6 +118,7 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QDateTimeEdit {
     background: @surface; color: @text;
     border: 1px solid @border; border-radius: 6px; padding: 7px 10px;
     selection-background-color: @focus; selection-color: #FFFFFF;
+    placeholder-text-color: @muted;
 }
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QDateTimeEdit:focus { border: 1px solid @focus; }
 QComboBox QAbstractItemView { background: @surface; color: @text; border: 1px solid @border; selection-background-color: @surfaceAlt; selection-color: @text; }
