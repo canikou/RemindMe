@@ -3,6 +3,7 @@
 #include "remindme/app_info.hpp"
 #include "remindme/parser.hpp"
 #include "remindme/reminder_popup.hpp"
+#include "remindme/theme.hpp"
 #include "remindme/time_format.hpp"
 #include "remindme/update_utils.hpp"
 #include "remindme/weekday_utils.hpp"
@@ -49,6 +50,8 @@
 #include <QSettings>
 #include <QStringConverter>
 #include <QStandardPaths>
+#include <QStyle>
+#include <QStyleHints>
 #include <QSystemTrayIcon>
 #include <QTime>
 #include <QDateTimeEdit>
@@ -73,7 +76,7 @@ namespace
 constexpr int kTickIntervalMs = 1000;
 constexpr int kDefaultReminderStepSeconds = 60;
 constexpr int kSnoozeSeconds = 5 * 60;
-constexpr int kMinimumRowHeight = 102;
+constexpr int kMinimumRowHeight = 64;
 constexpr int kShortRepeatWarningSeconds = 30;
 constexpr int kCompletedPreviewCount = 2;
 constexpr int kCompletedPreviewRowHeight = 56;
@@ -399,11 +402,6 @@ QDateTime nextAtTimeLocal(const QTime &timeOfDay, int repeatWeekdaysMask = 0)
     return nextAtTimeLocalFrom(timeOfDay, QDateTime::currentDateTime(), repeatWeekdaysMask);
 }
 
-QString repeatIndicator()
-{
-    return QString::fromUcs4(U"\U0001F501");
-}
-
 QString durationToInputText(int seconds)
 {
     int remaining = qMax(1, seconds);
@@ -426,23 +424,6 @@ QString durationToInputText(int seconds)
         parts.push_back(QString("%1s").arg(secs));
 
     return parts.join(" ");
-}
-
-QString repeatingInfoText(const Reminder &reminder)
-{
-    if (!reminder.repeating)
-        return "(None)";
-
-    if (reminder.scheduleType == ScheduleType::Relative)
-    {
-        const int interval = (reminder.intervalSeconds > 0) ? reminder.intervalSeconds : kDefaultReminderStepSeconds;
-        return QString("Every %1").arg(TimeFormat::formatIntervalText(interval));
-    }
-
-    const QString dayText = WeekdayUtils::maskDisplayText(reminder.repeatWeekdaysMask);
-    if (dayText == "daily")
-        return QString("At %1 daily").arg(reminder.timeOfDay.toString("h:mm AP"));
-    return QString("At %1 on %2").arg(reminder.timeOfDay.toString("h:mm AP"), dayText);
 }
 
 QString subtaskProgressText(const Reminder &reminder)
@@ -613,9 +594,10 @@ QString fitOverlayCountdownText(qint64 secondsRemaining, int timerColumnWidthPx)
     candidates.push_back(QString("%1m").arg((clampedSeconds + 59) / 60));
     candidates.push_back(QString("%1s").arg(clampedSeconds));
 
-    QFont timerFont("Cascadia Mono");
+    // Must match overlayTimerFont() so the measured fit is the rendered fit.
+    QFont timerFont;
+    timerFont.setFamilies({"Segoe UI Variable Text", "Segoe UI"});
     timerFont.setPixelSize(kOverlayTimerFontPixelSize);
-    timerFont.setStyleHint(QFont::TypeWriter);
     timerFont.setBold(true);
     const QFontMetrics metrics(timerFont);
     const int maxTextWidthPx = qMax(24, timerColumnWidthPx - kOverlayTextWidthSafetyPx);
@@ -633,15 +615,35 @@ QString fitOverlayCountdownText(qint64 secondsRemaining, int timerColumnWidthPx)
     return fallback.left(qMax(1, maxChars - 1)) + "+";
 }
 
+QFont overlayTimerFont()
+{
+    QFont timerFont;
+    timerFont.setFamilies({"Segoe UI Variable Text", "Segoe UI"});
+    timerFont.setPixelSize(kOverlayTimerFontPixelSize);
+    timerFont.setBold(true);
+    return timerFont;
+}
+
+void setRole(QWidget *widget, const char *role)
+{
+    if (!widget || widget->property("role").toString() == QLatin1String(role))
+        return;
+
+    widget->setProperty("role", QString::fromLatin1(role));
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+}
+
 QWidget *createOverlayReminderRow(
     const Reminder &reminder,
     const QDateTime &now,
     const OverlayLayoutMetrics &layout,
+    bool isNext,
     QWidget *parent,
     QObject *eventFilterTarget)
 {
     auto *row = new QFrame(parent);
-    row->setStyleSheet("background: #1a1a1a; border: 1px solid #2d2d2d; border-radius: 7px;");
+    row->setProperty("role", "overlayRow");
 
     auto *root = new QVBoxLayout(row);
     root->setContentsMargins(8, 8, 8, 9);
@@ -656,10 +658,10 @@ QWidget *createOverlayReminderRow(
     const QString titleText = fitOverlayTitleText(titleRaw, titleFontPx, layout.titleColumnWidthPx);
 
     auto *titleLabel = new QLabel(titleText, row);
-    titleLabel->setAlignment(Qt::AlignCenter);
+    titleLabel->setProperty("role", "overlayTitle");
+    titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     titleLabel->setWordWrap(true);
     titleLabel->setFixedWidth(layout.titleColumnWidthPx);
-    titleLabel->setStyleSheet("color: #eaeaea;");
     QFont titleFont = titleLabel->font();
     titleFont.setPixelSize(titleFontPx);
     titleFont.setBold(true);
@@ -668,20 +670,17 @@ QWidget *createOverlayReminderRow(
     titleLabel->setMaximumHeight((titleMetrics.lineSpacing() * 2) + 2);
 
     auto *divider = new QFrame(row);
-    divider->setFrameShape(QFrame::VLine);
-    divider->setFrameShadow(QFrame::Plain);
-    divider->setLineWidth(1);
-    divider->setStyleSheet("color: #2a2a2a; background: #2a2a2a; border: none;");
+    divider->setFrameShape(QFrame::NoFrame);
+    divider->setFixedWidth(1);
+    divider->setStyleSheet(QString("background: %1; border: none;").arg(Theme::palette().boardRaised));
     divider->setFixedHeight(titleLabel->maximumHeight());
 
     const QString timeText = fitOverlayCountdownText(now.secsTo(reminder.nextLocal), layout.timerColumnWidthPx);
     auto *timerLabel = new QLabel(timeText, row);
-    timerLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    timerLabel->setProperty("role", isNext ? "overlayTimeNext" : "overlayTime");
+    timerLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     timerLabel->setFixedWidth(layout.timerColumnWidthPx);
-    timerLabel->setStyleSheet(
-        "color: #f0f0f0; "
-        "font-family: \"Cascadia Mono\", \"Consolas\", \"Lucida Console\", monospace; "
-        "font-size: 14px; font-weight: 700;");
+    timerLabel->setFont(overlayTimerFont());
 
     top->addWidget(titleLabel, 0, Qt::AlignVCenter);
     top->addWidget(divider, 0, Qt::AlignVCenter);
@@ -692,9 +691,9 @@ QWidget *createOverlayReminderRow(
     if (!checklistText.isEmpty())
     {
         auto *checklistLabel = new QLabel(checklistText, row);
+        checklistLabel->setProperty("role", "overlayMeta");
         checklistLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         checklistLabel->setFixedWidth(layout.titleColumnWidthPx);
-        checklistLabel->setStyleSheet("font-size: 10px; color: #a8d6ff; border: none;");
         root->addWidget(checklistLabel, 0, Qt::AlignLeft);
     }
 
@@ -728,14 +727,14 @@ bool showChecklistDialog(QWidget *parent, const QString &reminderTitle, Reminder
         return false;
 
     QDialog dialog(parent);
-    dialog.setWindowTitle(QString("Subtask - %1").arg(reminderTitle));
+    dialog.setWindowTitle(QString("Subtasks: %1").arg(reminderTitle));
     dialog.setModal(true);
     dialog.resize(520, 420);
 
     auto *root = new QVBoxLayout(&dialog);
     auto *hint = new QLabel("Subtask progress resets each time this repeating reminder starts a new period.");
     hint->setWordWrap(true);
-    hint->setStyleSheet("font-size: 12px; color: #bdbdbd;");
+    hint->setProperty("role", "muted");
     root->addWidget(hint);
 
     auto *checklist = new QListWidget(&dialog);
@@ -759,9 +758,9 @@ bool showChecklistDialog(QWidget *parent, const QString &reminderTitle, Reminder
 
     auto *addRow = new QHBoxLayout();
     auto *newItemEdit = new QLineEdit(&dialog);
-    newItemEdit->setPlaceholderText("Add subtask item");
+    newItemEdit->setPlaceholderText("Add a subtask");
     auto *addBtn = new QPushButton("Add", &dialog);
-    auto *removeBtn = new QPushButton("Remove Selected", &dialog);
+    auto *removeBtn = new QPushButton("Remove selected", &dialog);
     addRow->addWidget(newItemEdit, 1);
     addRow->addWidget(addBtn);
     addRow->addWidget(removeBtn);
@@ -821,14 +820,14 @@ QString completedPatternText(const CompletedReminder &completed)
     if (completed.scheduleType == ScheduleType::Relative)
     {
         const int interval = (completed.intervalSeconds > 0) ? completed.intervalSeconds : kDefaultReminderStepSeconds;
-        return QString("Pattern: in %1").arg(TimeFormat::formatIntervalText(interval));
+        return QString("in %1").arg(TimeFormat::formatIntervalText(interval));
     }
 
     // Completed entries are always one-shot reminders, so an empty mask means "no repeat", not "daily".
     if (WeekdayUtils::normalizeMask(completed.repeatWeekdaysMask) == 0)
-        return QString("Pattern: at %1").arg(completed.timeOfDay.toString("h:mm AP"));
+        return QString("at %1").arg(completed.timeOfDay.toString("h:mm AP"));
     const QString dayText = WeekdayUtils::maskDisplayText(completed.repeatWeekdaysMask);
-    return QString("Pattern: at %1 on %2").arg(completed.timeOfDay.toString("h:mm AP"), dayText);
+    return QString("at %1 on %2").arg(completed.timeOfDay.toString("h:mm AP"), dayText);
 }
 
 QString completedTitleText(const CompletedReminder &completed)
@@ -846,7 +845,7 @@ QWidget *createCompletedEntryRow(
 {
     auto *row = new QWidget(parent);
     auto *root = new QHBoxLayout(row);
-    root->setContentsMargins(12, 8, 12, 8);
+    root->setContentsMargins(16, 8, 12, 8);
     root->setSpacing(12);
 
     auto *textBox = new QVBoxLayout();
@@ -854,12 +853,12 @@ QWidget *createCompletedEntryRow(
     textBox->setSpacing(2);
 
     auto *title = new QLabel(completedTitleText(entry));
-    title->setStyleSheet("font-size: 13px; font-weight: 700;");
+    title->setProperty("role", "cellTitle");
 
     auto *meta = new QLabel(
-        QString("%1 | %2")
-            .arg(entry.completedAt.toString("M/d/yyyy h:mm AP"), completedPatternText(entry)));
-    meta->setStyleSheet("font-size: 12px; color: #9f9f9f;");
+        QString("Done %1  ·  %2")
+            .arg(entry.completedAt.toString("MMM d, h:mm AP"), completedPatternText(entry)));
+    meta->setProperty("role", "cellMuted");
 
     textBox->addWidget(title);
     textBox->addWidget(meta);
@@ -867,8 +866,8 @@ QWidget *createCompletedEntryRow(
     auto *textWrap = new QWidget(row);
     textWrap->setLayout(textBox);
 
-    auto *addAgainBtn = new QPushButton("Add Again", row);
-    addAgainBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
+    auto *addAgainBtn = new QPushButton("Add again", row);
+    addAgainBtn->setProperty("role", "rowAction");
     QObject::connect(addAgainBtn, &QPushButton::clicked, row, [onAddAgain]()
                      { onAddAgain(); });
 
@@ -915,6 +914,267 @@ void rescheduleAfterAcknowledge(Reminder &reminder, const QDateTime &now)
 
     const int weekdayMask = reminder.repeating ? WeekdayUtils::normalizeMask(reminder.repeatWeekdaysMask) : 0;
     reminder.nextLocal = nextAtTimeLocalFrom(reminder.timeOfDay, now, weekdayMask);
+}
+
+constexpr int kColTimeWidth = 112;
+constexpr int kColRepeatsWidth = 168;
+constexpr int kColDueWidth = 104;
+constexpr int kColActionsWidth = 232;
+constexpr int kRowPaddingH = 16;
+
+QString dueDayText(const QDateTime &when, const QDateTime &now)
+{
+    const qint64 days = now.date().daysTo(when.date());
+    if (days == 0)
+        return "Today";
+    if (days == 1)
+        return "Tomorrow";
+    if (days > 1 && days < 7)
+        return when.toString("dddd");
+    if (when.date().year() == now.date().year())
+        return when.toString("ddd, MMM d");
+    return when.toString("MMM d, yyyy");
+}
+
+QString repeatsCellText(const Reminder &reminder)
+{
+    if (!reminder.repeating)
+        return "Once";
+
+    if (reminder.scheduleType == ScheduleType::Relative)
+    {
+        const int interval = (reminder.intervalSeconds > 0) ? reminder.intervalSeconds : kDefaultReminderStepSeconds;
+        return QString("Every %1").arg(TimeFormat::formatIntervalText(interval));
+    }
+
+    const QString dayText = WeekdayUtils::maskDisplayText(reminder.repeatWeekdaysMask);
+    if (dayText.isEmpty())
+        return "Daily";
+    return dayText.left(1).toUpper() + dayText.mid(1);
+}
+
+QString countdownCellText(qint64 secondsRemaining)
+{
+    return secondsRemaining <= 0 ? QString("Due now") : TimeFormat::formatCountdown(secondsRemaining);
+}
+
+// Turns a successful parse into a scheduled reminder (no id); shared by Add and the live preview.
+Reminder reminderFromParse(const ParseResult &parsed, const QDateTime &now)
+{
+    Reminder reminder;
+    reminder.title = parsed.title;
+    reminder.repeating = parsed.hasRepeatDirective;
+    reminder.repeatWeekdaysMask = 0;
+
+    if (parsed.isRelative)
+    {
+        reminder.scheduleType = ScheduleType::Relative;
+        reminder.nextLocal = now.addSecs(parsed.durationSeconds);
+        reminder.intervalSeconds = parsed.hasRepeatDirective ? parsed.repeatIntervalSeconds : parsed.durationSeconds;
+        return reminder;
+    }
+
+    reminder.timeOfDay = parsed.timeOfDay;
+    const int repeatWeekdayMask = WeekdayUtils::normalizeMask(parsed.repeatWeekdaysMask);
+
+    if (parsed.date.isValid())
+    {
+        reminder.scheduleType = ScheduleType::AtTimeOfDay;
+        reminder.intervalSeconds = 0;
+        reminder.nextLocal = QDateTime(parsed.date, parsed.timeOfDay);
+    }
+    else if (reminder.repeating && repeatWeekdayMask != 0)
+    {
+        reminder.scheduleType = ScheduleType::AtTimeOfDay;
+        reminder.intervalSeconds = 0;
+        reminder.repeatWeekdaysMask = repeatWeekdayMask;
+        reminder.nextLocal = nextAtTimeLocalFrom(parsed.timeOfDay, now, repeatWeekdayMask);
+    }
+    else if (reminder.repeating && parsed.repeatIntervalSeconds != 86400)
+    {
+        reminder.scheduleType = ScheduleType::Relative;
+        reminder.intervalSeconds = parsed.repeatIntervalSeconds;
+        reminder.nextLocal = now.addSecs(parsed.repeatIntervalSeconds);
+    }
+    else
+    {
+        reminder.scheduleType = ScheduleType::AtTimeOfDay;
+        reminder.intervalSeconds = 0;
+        reminder.nextLocal = nextAtTimeLocalFrom(parsed.timeOfDay, now, 0);
+    }
+    return reminder;
+}
+
+QString inputPreviewHtml(const QString &text, const QDateTime &now)
+{
+    if (text.trimmed().isEmpty())
+        return "Try <b>Drink water in 45m</b>, <b>Stand up at 7:00AM every weekday</b> or <b>Dentist on Oct 24 6:30AM</b>.";
+
+    const ParseResult parsed = Parser::parseInput(text);
+    if (!parsed.ok)
+        return "Keep typing: say when with <b>in 45m</b>, <b>at 7:00AM</b> or <b>on Oct 24 6:30AM</b>.";
+
+    const Reminder reminder = reminderFromParse(parsed, now);
+    QString day = dueDayText(reminder.nextLocal, now);
+    if (day == "Today" || day == "Tomorrow")
+        day = day.toLower();
+    const QString first = QString("%1 at %2").arg(day, reminder.nextLocal.toString("h:mm AP"));
+    return QString("Understood as <b>%1</b>  ·  first %2  ·  %3. Press Enter to add.")
+        .arg(reminder.title.toHtmlEscaped(), first.toHtmlEscaped(), repeatsCellText(reminder).toLower().toHtmlEscaped());
+}
+
+QLabel *makeCapsLabel(const QString &text, const char *role, QWidget *parent = nullptr)
+{
+    auto *label = new QLabel(text.toUpper(), parent);
+    label->setProperty("role", role);
+    QFont font = label->font();
+    font.setLetterSpacing(QFont::PercentageSpacing, 108);
+    label->setFont(font);
+    return label;
+}
+
+QWidget *createDepartureRow(
+    const Reminder &reminder,
+    const QDateTime &now,
+    QLabel *&outCountdown,
+    QWidget *parent,
+    const std::function<void()> &onEdit,
+    const std::function<void()> &onDelete,
+    const std::function<void()> &onSubtasks,
+    const std::function<void(int, bool)> &onSubtaskToggled)
+{
+    auto *row = new QWidget(parent);
+    auto *root = new QHBoxLayout(row);
+    root->setContentsMargins(kRowPaddingH, 12, 8, 12);
+    root->setSpacing(12);
+
+    auto *timeBox = new QVBoxLayout();
+    timeBox->setContentsMargins(0, 0, 0, 0);
+    timeBox->setSpacing(1);
+    auto *time = new QLabel(reminder.nextLocal.toString("h:mm AP"));
+    time->setProperty("role", "cellTime");
+    auto *day = new QLabel(dueDayText(reminder.nextLocal, now));
+    day->setProperty("role", "cellMuted");
+    timeBox->addWidget(time);
+    timeBox->addWidget(day);
+    timeBox->addStretch(1);
+    auto *timeWrap = new QWidget(row);
+    timeWrap->setLayout(timeBox);
+    timeWrap->setFixedWidth(kColTimeWidth);
+
+    auto *infoBox = new QVBoxLayout();
+    infoBox->setContentsMargins(0, 0, 0, 0);
+    infoBox->setSpacing(4);
+    auto *title = new QLabel(reminder.title);
+    title->setProperty("role", "cellTitle");
+    title->setWordWrap(true);
+    infoBox->addWidget(title);
+
+    if (!reminder.checklistItems.isEmpty())
+    {
+        auto *progressRow = new QHBoxLayout();
+        progressRow->setContentsMargins(0, 2, 0, 0);
+        progressRow->setSpacing(10);
+        auto *progressLabel = new QLabel(subtaskProgressText(reminder));
+        progressLabel->setProperty("role", "cellMuted");
+        auto *progress = new QProgressBar();
+        progress->setRange(0, reminder.checklistItems.size());
+        progress->setValue(reminder.checkedChecklistCount());
+        progress->setTextVisible(false);
+        progress->setFixedSize(120, 6);
+        progressRow->addWidget(progressLabel);
+        progressRow->addWidget(progress);
+        progressRow->addStretch(1);
+        infoBox->addLayout(progressRow);
+
+        for (int i = 0; i < reminder.checklistItems.size(); ++i)
+        {
+            const Reminder::ChecklistItem &subtask = reminder.checklistItems[i];
+            const QString subtaskText = subtask.text.trimmed();
+            if (subtask.checked || subtaskText.isEmpty())
+                continue;
+
+            auto *subtaskCheck = new QCheckBox(subtaskText);
+            subtaskCheck->setProperty("role", "subtask");
+            QObject::connect(subtaskCheck, &QCheckBox::clicked, row, [onSubtaskToggled, i](bool checked)
+                             { onSubtaskToggled(i, checked); });
+            infoBox->addWidget(subtaskCheck);
+        }
+    }
+    infoBox->addStretch(1);
+    auto *infoWrap = new QWidget(row);
+    infoWrap->setLayout(infoBox);
+
+    auto *repeats = new QLabel(repeatsCellText(reminder));
+    repeats->setProperty("role", "cellMuted");
+    repeats->setWordWrap(true);
+    repeats->setFixedWidth(kColRepeatsWidth);
+    repeats->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+
+    const qint64 secondsLeft = now.secsTo(reminder.nextLocal);
+    auto *countdown = new QLabel(countdownCellText(secondsLeft));
+    countdown->setProperty("role", secondsLeft <= 0 ? "cellDue" : "cellCountdown");
+    countdown->setAlignment(Qt::AlignRight | Qt::AlignTop);
+    countdown->setFixedWidth(kColDueWidth);
+    outCountdown = countdown;
+
+    auto *actions = new QHBoxLayout();
+    actions->setContentsMargins(0, 0, 0, 0);
+    actions->setSpacing(2);
+    actions->addStretch(1);
+    if (reminder.repeating)
+    {
+        auto *subtasksBtn = new QPushButton("Subtasks");
+        subtasksBtn->setProperty("role", "rowAction");
+        subtasksBtn->setToolTip("Add a checklist that resets every time this reminder repeats");
+        QObject::connect(subtasksBtn, &QPushButton::clicked, row, [onSubtasks]() { onSubtasks(); });
+        actions->addWidget(subtasksBtn);
+    }
+    auto *editBtn = new QPushButton("Edit");
+    editBtn->setProperty("role", "rowAction");
+    QObject::connect(editBtn, &QPushButton::clicked, row, [onEdit]() { onEdit(); });
+    auto *delBtn = new QPushButton("Delete");
+    delBtn->setProperty("role", "rowDanger");
+    QObject::connect(delBtn, &QPushButton::clicked, row, [onDelete]() { onDelete(); });
+    actions->addWidget(editBtn);
+    actions->addWidget(delBtn);
+    auto *actionsWrap = new QWidget(row);
+    actionsWrap->setLayout(actions);
+    actionsWrap->setFixedWidth(kColActionsWidth);
+
+    root->addWidget(timeWrap, 0, Qt::AlignTop);
+    root->addWidget(infoWrap, 1);
+    root->addWidget(repeats, 0, Qt::AlignTop);
+    root->addWidget(countdown, 0, Qt::AlignTop);
+    root->addWidget(actionsWrap, 0, Qt::AlignTop);
+    return row;
+}
+
+QWidget *createDepartureHeader(QWidget *parent)
+{
+    auto *header = new QWidget(parent);
+    auto *root = new QHBoxLayout(header);
+    // List border (1px) plus row padding keeps headers over their cells.
+    root->setContentsMargins(kRowPaddingH + 1, 0, 8 + 1, 0);
+    root->setSpacing(12);
+
+    auto *time = makeCapsLabel("Time", "colHeader");
+    time->setFixedWidth(kColTimeWidth);
+    auto *reminder = makeCapsLabel("Reminder", "colHeader");
+    auto *repeats = makeCapsLabel("Repeats", "colHeader");
+    repeats->setFixedWidth(kColRepeatsWidth);
+    auto *due = makeCapsLabel("Due in", "colHeader");
+    due->setFixedWidth(kColDueWidth);
+    due->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    auto *actionsSpacer = new QWidget(header);
+    actionsSpacer->setFixedWidth(kColActionsWidth);
+
+    root->addWidget(time);
+    root->addWidget(reminder, 1);
+    root->addWidget(repeats);
+    root->addWidget(due);
+    root->addWidget(actionsSpacer);
+    return header;
 }
 
 struct EditReminderValues
@@ -1044,93 +1304,145 @@ bool showEditReminderDialog(QWidget *parent, const Reminder &reminder, EditRemin
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
-    setWindowTitle(QString("%1 v%2").arg(AppInfo::kAppName, AppInfo::kAppVersion));
+    setWindowTitle(AppInfo::kAppName);
     resize(1020, 700);
+    setMinimumSize(780, 520);
+
+    Theme::apply(Theme::systemPrefersDark());
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this]()
+            {
+                Theme::apply(Theme::systemPrefersDark());
+                updateOverlayContents(); });
+#endif
 
     auto *central = new QWidget(this);
     auto *v = new QVBoxLayout(central);
-    v->setContentsMargins(14, 12, 14, 12);
-    v->setSpacing(10);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(0);
 
-    setStyleSheet(R"(
-        QMainWindow { background: #1f1f1f; color: #eaeaea; }
-        QLabel { color: #eaeaea; }
-        QLineEdit {
-            background: #2b2b2b; color: #eaeaea;
-            border: 1px solid #3c3c3c; padding: 8px;
-        }
-        QLineEdit:focus { border: 1px solid #4ca3ff; }
-        QPushButton {
-            background: #3a3a3a; color: #eaeaea;
-            border: 1px solid #555; padding: 8px 12px;
-        }
-        QPushButton:hover { background: #444; }
-        QPushButton:pressed { background: #2f2f2f; }
-        QPushButton:focus { border: 1px solid #4ca3ff; }
-        QPushButton:disabled { background: #2a2a2a; color: #6f6f6f; border: 1px solid #3a3a3a; }
-        QPushButton#primaryButton { background: #2f6fb3; border: 1px solid #4ca3ff; }
-        QPushButton#primaryButton:hover { background: #3a7fc6; }
-        QPushButton#primaryButton:pressed { background: #285f9a; }
-        QCheckBox { color: #eaeaea; }
-    )");
+    // ---- Board: the next reminder leaves first ----
+    board = new QFrame();
+    board->setObjectName("board");
+    auto *boardLayout = new QVBoxLayout(board);
+    boardLayout->setContentsMargins(24, 14, 20, 22);
+    boardLayout->setSpacing(14);
 
-    auto *topRow = new QHBoxLayout();
-
+    auto *boardBar = new QHBoxLayout();
+    boardBar->setSpacing(4);
     titleLabel = new QLabel();
-    titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    titleLabel->setStyleSheet("font-size: 16px; font-weight: 700;");
+    titleLabel->setProperty("role", "boardMuted");
+    nowLabel = new QLabel();
+    nowLabel->setProperty("role", "boardMuted");
+    auto *barDot = new QLabel("·");
+    barDot->setProperty("role", "boardMuted");
 
-    viewAllCompletedBtn = new QPushButton("Reminder History");
-    viewAllCompletedBtn->setStyleSheet("font-size: 12px; padding: 6px 10px;");
+    overlayToggle = new QPushButton("Overlay");
+    overlayToggle->setCheckable(true);
+    overlayToggle->setToolTip("Show a small always-on-top board of upcoming reminders");
+
+    viewAllCompletedBtn = new QPushButton("History");
+    viewAllCompletedBtn->setToolTip("Reminders you've finished");
     connect(viewAllCompletedBtn, &QPushButton::clicked, this, &MainWindow::showAllCompletedDialog);
 
-    overlayToggle = new QCheckBox("Overlay");
-    overlayToggle->setStyleSheet("font-size: 12px; color: #cfcfcf;");
+    moreBtn = new QToolButton();
+    moreBtn->setText("More");
+    moreBtn->setPopupMode(QToolButton::InstantPopup);
+    auto *moreMenu = new QMenu(moreBtn);
+    QAction *exportAction = moreMenu->addAction("Export reminders…");
+    QAction *importAction = moreMenu->addAction("Import reminders…");
+    moreMenu->addSeparator();
+    QAction *updatesAction = moreMenu->addAction("Check for updates");
+    moreBtn->setMenu(moreMenu);
+    connect(exportAction, &QAction::triggered, this, &MainWindow::onExportClicked);
+    connect(importAction, &QAction::triggered, this, &MainWindow::onImportClicked);
+    connect(updatesAction, &QAction::triggered, this, &MainWindow::onCheckUpdatesClicked);
 
-    topRow->addWidget(titleLabel, 1);
-    topRow->addWidget(overlayToggle, 0, Qt::AlignRight);
-    topRow->addWidget(viewAllCompletedBtn, 0, Qt::AlignRight);
-    v->addLayout(topRow);
+    boardBar->addWidget(titleLabel);
+    boardBar->addSpacing(6);
+    boardBar->addWidget(barDot);
+    boardBar->addSpacing(6);
+    boardBar->addWidget(nowLabel);
+    boardBar->addStretch(1);
+    boardBar->addWidget(overlayToggle);
+    boardBar->addWidget(viewAllCompletedBtn);
+    boardBar->addWidget(moreBtn);
+    boardLayout->addLayout(boardBar);
 
-    nowLabel = new QLabel();
-    nowLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    nowLabel->setStyleSheet("font-size: 42px; font-weight: 750;");
-    v->addWidget(nowLabel);
+    auto *nextRow = new QHBoxLayout();
+    nextRow->setSpacing(24);
+    auto *nextText = new QVBoxLayout();
+    nextText->setSpacing(2);
+    boardNextCaption = makeCapsLabel("Next reminder", "boardLabel");
+    boardNextTitle = new QLabel();
+    boardNextTitle->setProperty("role", "boardTitle");
+    boardNextTitle->setWordWrap(true);
+    boardNextMeta = new QLabel();
+    boardNextMeta->setProperty("role", "boardMuted");
+    nextText->addWidget(boardNextCaption);
+    nextText->addSpacing(2);
+    nextText->addWidget(boardNextTitle);
+    nextText->addWidget(boardNextMeta);
+    boardCountdown = new QLabel();
+    boardCountdown->setProperty("role", "boardCountdown");
+    boardCountdown->setAlignment(Qt::AlignRight | Qt::AlignBottom);
+    nextRow->addLayout(nextText, 1);
+    nextRow->addWidget(boardCountdown, 0, Qt::AlignBottom);
+    boardLayout->addLayout(nextRow);
+    v->addWidget(board);
+
+    // ---- Body: departures, recently done, input ----
+    auto *body = new QWidget();
+    auto *bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setContentsMargins(20, 16, 20, 16);
+    bodyLayout->setSpacing(10);
 
     stacked = new QStackedWidget();
 
-    emptyLabel = new QLabel(
-        "<div style='font-size: 22px; font-weight: 700;'>No reminders yet</div>"
-        "<div style='font-size: 13px; color: #9f9f9f; margin-top: 8px;'>"
-        "Type one below and press Enter:<br>"
-        "Drink water in 45m &nbsp;&middot;&nbsp; Stand up at 7:00AM every weekday<br>"
-        "Dentist on October 24, 2026 6:30AM</div>");
-    emptyLabel->setTextFormat(Qt::RichText);
-    emptyLabel->setAlignment(Qt::AlignCenter);
+    emptyState = new QWidget();
+    auto *emptyLayout = new QVBoxLayout(emptyState);
+    emptyLayout->addStretch(1);
+    auto *emptyTitle = new QLabel("No reminders yet");
+    emptyTitle->setProperty("role", "cellTitle");
+    emptyTitle->setAlignment(Qt::AlignCenter);
+    auto *emptyHint = new QLabel(
+        "Type what and when in the box below, then press Enter.\n"
+        "Drink water in 45m  ·  Stand up at 7:00AM every weekday  ·  Dentist on Oct 24 6:30AM");
+    emptyHint->setProperty("role", "muted");
+    emptyHint->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(emptyTitle);
+    emptyLayout->addSpacing(6);
+    emptyLayout->addWidget(emptyHint);
+    emptyLayout->addStretch(2);
 
+    auto *departures = new QWidget();
+    auto *departuresLayout = new QVBoxLayout(departures);
+    departuresLayout->setContentsMargins(0, 0, 0, 0);
+    departuresLayout->setSpacing(6);
+    departuresLayout->addWidget(createDepartureHeader(departures));
     list = new QListWidget();
-    list->setStyleSheet(R"(
-        QListWidget { background: #171717; border: 1px solid #2a2a2a; }
-        QListWidget::item { border-bottom: 1px solid #242424; }
-    )");
+    list->setObjectName("departures");
     list->setSpacing(0);
     list->setUniformItemSizes(false);
+    list->setSelectionMode(QAbstractItemView::NoSelection);
+    list->setFocusPolicy(Qt::NoFocus);
+    list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    departuresLayout->addWidget(list, 1);
 
-    stacked->addWidget(emptyLabel);
-    stacked->addWidget(list);
-    v->addWidget(stacked, 1);
+    stacked->addWidget(emptyState);
+    stacked->addWidget(departures);
+    bodyLayout->addWidget(stacked, 1);
 
     completedSection = new QWidget();
     auto *completedSectionLayout = new QVBoxLayout(completedSection);
-    completedSectionLayout->setContentsMargins(0, 0, 0, 0);
+    completedSectionLayout->setContentsMargins(0, 4, 0, 0);
     completedSectionLayout->setSpacing(4);
 
     auto *completedHeaderRow = new QHBoxLayout();
     completedHeaderRow->setContentsMargins(0, 0, 0, 0);
     completedHeaderRow->setSpacing(8);
 
-    completedHeaderLabel = new QLabel("Completed");
-    completedHeaderLabel->setStyleSheet("font-size: 13px; font-weight: 700; color: #cccccc;");
+    completedHeaderLabel = makeCapsLabel("Recently done", "sectionTitle");
 
     completedToggleBtn = new QToolButton();
     completedToggleBtn->setText("Hide");
@@ -1138,7 +1450,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     completedToggleBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     completedToggleBtn->setAutoRaise(true);
     completedToggleBtn->setCursor(Qt::PointingHandCursor);
-    completedToggleBtn->setStyleSheet("font-size: 12px; color: #cfcfcf; padding: 2px 4px;");
     connect(completedToggleBtn, &QToolButton::clicked, this, &MainWindow::toggleCompletedPreview);
 
     completedHeaderRow->addWidget(completedHeaderLabel);
@@ -1152,48 +1463,40 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     completedBodyLayout->setSpacing(0);
 
     completedList = new QListWidget();
-    completedList->setStyleSheet(R"(
-        QListWidget { background: #151515; border: 1px solid #2a2a2a; }
-        QListWidget::item { border-bottom: 1px solid #242424; }
-    )");
     completedList->setSpacing(0);
     completedList->setUniformItemSizes(false);
+    completedList->setSelectionMode(QAbstractItemView::NoSelection);
+    completedList->setFocusPolicy(Qt::NoFocus);
     completedList->setFixedHeight((kCompletedPreviewCount * kCompletedPreviewRowHeight) + kCompletedPreviewListPadding);
     completedBodyLayout->addWidget(completedList);
     completedSectionLayout->addWidget(completedPreviewBody);
-    v->addWidget(completedSection);
+    bodyLayout->addWidget(completedSection);
 
     completedPreviewAnim = new QPropertyAnimation(completedPreviewBody, "maximumHeight", this);
     completedPreviewAnim->setDuration(kCompletedSlideDurationMs);
-    completedPreviewAnim->setEasingCurve(QEasingCurve::InOutCubic);
+    completedPreviewAnim->setEasingCurve(QEasingCurve::OutCubic);
     completedPreviewBody->setMaximumHeight(completedPreviewExpandedHeight());
     setCompletedPreviewCollapsed(false, false);
 
+    bodyLayout->addSpacing(4);
     auto *h = new QHBoxLayout();
+    h->setSpacing(8);
     input = new QLineEdit();
-    input->setPlaceholderText(R"(e.g. "Drink water in 45m", "Stand up at 7:00AM every day", "Dentist on Oct 24 6:30AM")");
+    input->setPlaceholderText("What and when? e.g. Drink water in 45m");
+    input->setClearButtonEnabled(true);
     auto *addBtn = new QPushButton("Add");
     addBtn->setObjectName("primaryButton");
-    auto *exportBtn = new QPushButton("Export");
-    auto *importBtn = new QPushButton("Import");
-    addBtn->setStyleSheet("font-size: 13px; padding: 8px 16px;");
-    exportBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
-    importBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
-    exportBtn->setToolTip("Copy all reminders to the clipboard as a share string");
-    importBtn->setToolTip("Add reminders from a share string");
     h->addWidget(input, 1);
     h->addWidget(addBtn);
-    h->addSpacing(8);
-    h->addWidget(exportBtn);
-    h->addWidget(importBtn);
-    v->addLayout(h);
+    bodyLayout->addLayout(h);
 
-    inputErrorLabel = new QLabel();
-    inputErrorLabel->setWordWrap(true);
-    inputErrorLabel->setStyleSheet("font-size: 12px; color: #ff8080;");
-    inputErrorLabel->hide();
-    v->addWidget(inputErrorLabel);
+    inputStatusLabel = new QLabel();
+    inputStatusLabel->setWordWrap(true);
+    inputStatusLabel->setTextFormat(Qt::RichText);
+    inputStatusLabel->setProperty("role", "hint");
+    bodyLayout->addWidget(inputStatusLabel);
 
+    v->addWidget(body, 1);
     setCentralWidget(central);
 
     overlayWindow = new QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
@@ -1202,12 +1505,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     overlayWindow->setWindowTitle("RemindMe Overlay");
     overlayWindow->resize(kOverlayDefaultWidthPx, kOverlayDefaultHeightPx);
     overlayWindow->setObjectName("overlayWindow");
-    overlayWindow->setStyleSheet(R"(
-        QFrame#overlayPanel {
-            background: transparent;
-            border: none;
-        }
-    )");
 
     auto *overlayRootLayout = new QVBoxLayout(overlayWindow);
     overlayRootLayout->setContentsMargins(kOverlayRootMarginPx, kOverlayRootMarginPx, kOverlayRootMarginPx, kOverlayRootMarginPx);
@@ -1215,6 +1512,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     auto *overlayPanel = new QFrame(overlayWindow);
     overlayPanel->setObjectName("overlayPanel");
+    overlayPanel->setStyleSheet("QFrame#overlayPanel { background: transparent; border: none; }");
     overlayRootLayout->addWidget(overlayPanel);
 
     auto *overlayLayout = new QVBoxLayout(overlayPanel);
@@ -1236,23 +1534,23 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     }
     overlayWindow->hide();
 
-    connect(overlayToggle, &QCheckBox::toggled, this, &MainWindow::setOverlayVisible);
+    connect(overlayToggle, &QPushButton::toggled, this, &MainWindow::setOverlayVisible);
 
     connect(input, &QLineEdit::returnPressed, this, &MainWindow::onAddClicked);
     connect(addBtn, &QPushButton::clicked, this, &MainWindow::onAddClicked);
-    connect(input, &QLineEdit::textEdited, inputErrorLabel, &QLabel::hide);
-    connect(exportBtn, &QPushButton::clicked, this, &MainWindow::onExportClicked);
-    connect(importBtn, &QPushButton::clicked, this, &MainWindow::onImportClicked);
+    connect(input, &QLineEdit::textChanged, this, &MainWindow::updateInputPreview);
 
     QString err;
     if (!store.load(err))
-        QMessageBox::warning(this, "Load error", err);
+        QMessageBox::warning(this, "Couldn't load reminders", err);
 
     setupSystemTray();
 
     updateGreetingMessage();
     nowLabel->setText(TimeFormat::formatClockTime(QDateTime::currentDateTime()));
+    updateInputPreview();
     refreshUI();
+    input->setFocus();
 
     tickTimer = new QTimer(this);
     tickTimer->setInterval(kTickIntervalMs);
@@ -1707,67 +2005,23 @@ void MainWindow::onAddClicked()
 {
     const QString text = input->text().trimmed();
     if (text.isEmpty())
+    {
+        input->setFocus();
         return;
+    }
 
     const ParseResult parsed = Parser::parseInput(text);
     if (!parsed.ok)
     {
-        // Inline instead of a modal so the user can fix the text in place.
-        inputErrorLabel->setText(parsed.error);
-        inputErrorLabel->show();
+        // Inline instead of a modal so the user can fix the text in place; typing clears it.
+        setRole(inputStatusLabel, "error");
+        inputStatusLabel->setText(parsed.error.toHtmlEscaped());
         input->setFocus();
         return;
     }
-    inputErrorLabel->hide();
 
-    const bool shouldRepeat = parsed.hasRepeatDirective;
-
-    Reminder reminder;
+    Reminder reminder = reminderFromParse(parsed, QDateTime::currentDateTime());
     reminder.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    reminder.title = parsed.title;
-    reminder.repeating = shouldRepeat;
-    reminder.repeatWeekdaysMask = 0;
-
-    if (parsed.isRelative)
-    {
-        reminder.scheduleType = ScheduleType::Relative;
-        reminder.nextLocal = QDateTime::currentDateTime().addSecs(parsed.durationSeconds);
-        reminder.intervalSeconds = shouldRepeat
-                                       ? (parsed.hasRepeatDirective ? parsed.repeatIntervalSeconds : parsed.durationSeconds)
-                                       : parsed.durationSeconds;
-    }
-    else
-    {
-        reminder.timeOfDay = parsed.timeOfDay;
-        const int repeatWeekdayMask = WeekdayUtils::normalizeMask(parsed.repeatWeekdaysMask);
-
-        if (parsed.date.isValid())
-        {
-            reminder.scheduleType = ScheduleType::AtTimeOfDay;
-            reminder.intervalSeconds = 0;
-            reminder.nextLocal = QDateTime(parsed.date, parsed.timeOfDay);
-        }
-        else if (shouldRepeat && repeatWeekdayMask != 0)
-        {
-            reminder.scheduleType = ScheduleType::AtTimeOfDay;
-            reminder.intervalSeconds = 0;
-            reminder.repeatWeekdaysMask = repeatWeekdayMask;
-            reminder.nextLocal = nextAtTimeLocal(parsed.timeOfDay, reminder.repeatWeekdaysMask);
-        }
-        else if (shouldRepeat && parsed.hasRepeatDirective && parsed.repeatIntervalSeconds != 86400)
-        {
-            reminder.scheduleType = ScheduleType::Relative;
-            reminder.intervalSeconds = parsed.repeatIntervalSeconds;
-            reminder.nextLocal = QDateTime::currentDateTime().addSecs(parsed.repeatIntervalSeconds);
-        }
-        else
-        {
-            reminder.scheduleType = ScheduleType::AtTimeOfDay;
-            reminder.intervalSeconds = 0;
-            reminder.repeatWeekdaysMask = 0;
-            reminder.nextLocal = nextAtTimeLocal(parsed.timeOfDay);
-        }
-    }
 
     if (reminder.repeating &&
         reminder.scheduleType == ScheduleType::Relative &&
@@ -1983,144 +2237,28 @@ void MainWindow::refreshUI()
 
         for (const Reminder &reminder : items)
         {
-            auto *row = new QWidget();
-            row->setStyleSheet("background: #1a1a1a;");
-
-            auto *root = new QHBoxLayout(row);
-            root->setContentsMargins(18, 14, 18, 14);
-            root->setSpacing(18);
-
-            auto *leftTime = new QLabel(TimeFormat::formatCountdown(now.secsTo(reminder.nextLocal)));
-            leftTime->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-            leftTime->setStyleSheet("font-size: 32px; font-weight: 800; color: #eaeaea;");
-            leftTime->setMinimumWidth(180);
-            countdownLabels.insert(reminder.id, leftTime);
-
-            auto *infoBox = new QVBoxLayout();
-            infoBox->setContentsMargins(0, 0, 0, 0);
-            infoBox->setSpacing(4);
-
-            const QString titleText = reminder.repeating
-                                          ? QString("%1  %2").arg(reminder.title, repeatIndicator())
-                                          : reminder.title;
-            auto *title = new QLabel(titleText);
-            title->setStyleSheet("font-size: 16px; font-weight: 700;");
-
-            auto *due = new QLabel(TimeFormat::formatDueDateTime(reminder.nextLocal));
-            due->setStyleSheet("font-size: 13px; color: #bfbfbf;");
-
-            infoBox->addWidget(title);
-            infoBox->addWidget(due);
-
-            if (reminder.repeating)
-            {
-                auto *extra = new QLabel(repeatingInfoText(reminder));
-                extra->setStyleSheet("font-size: 13px; color: #8f8f8f;");
-                infoBox->addWidget(extra);
-            }
-
-            if (!reminder.checklistItems.isEmpty())
-            {
-                auto *progressRow = new QHBoxLayout();
-                progressRow->setContentsMargins(0, 0, 0, 0);
-                progressRow->setSpacing(10);
-
-                auto *progressLabel = new QLabel(subtaskProgressText(reminder));
-                progressLabel->setStyleSheet("font-size: 12px; color: #a8d6ff;");
-
-                auto *progress = new QProgressBar();
-                progress->setRange(0, reminder.checklistItems.size());
-                progress->setValue(reminder.checkedChecklistCount());
-                progress->setTextVisible(false);
-                progress->setFixedHeight(10);
-                progress->setStyleSheet(R"(
-                    QProgressBar {
-                        border: 1px solid #3a3a3a;
-                        background: #232323;
-                        border-radius: 4px;
-                    }
-                    QProgressBar::chunk {
-                        background: #4ca3ff;
-                    }
-                )");
-
-                progressRow->addWidget(progressLabel);
-                progressRow->addWidget(progress, 1);
-                infoBox->addLayout(progressRow);
-
-                bool hasPendingSubtasks = false;
-                for (int subtaskIndex = 0; subtaskIndex < reminder.checklistItems.size(); ++subtaskIndex)
+            const QString rid = reminder.id;
+            QLabel *countdown = nullptr;
+            QWidget *row = createDepartureRow(
+                reminder,
+                now,
+                countdown,
+                list,
+                [this, rid]() { editReminderById(rid); },
+                [this, rid]() { deleteReminderById(rid); },
+                [this, rid]() { editChecklistById(rid); },
+                [this, rid](int subtaskIndex, bool checked)
                 {
-                    const Reminder::ChecklistItem &subtask = reminder.checklistItems[subtaskIndex];
-                    const QString subtaskText = subtask.text.trimmed();
-                    if (subtask.checked || subtaskText.isEmpty())
-                        continue;
+                    Reminder *target = findReminderById(store.items(), rid);
+                    if (!target || subtaskIndex < 0 || subtaskIndex >= target->checklistItems.size())
+                        return;
+                    if (target->checklistItems[subtaskIndex].checked == checked)
+                        return;
 
-                    if (!hasPendingSubtasks)
-                    {
-                        auto *subtaskHeader = new QLabel("Subtasks");
-                        subtaskHeader->setStyleSheet("font-size: 12px; font-weight: 700; color: #d2d2d2;");
-                        infoBox->addWidget(subtaskHeader);
-                        hasPendingSubtasks = true;
-                    }
-
-                    auto *subtaskCheck = new QCheckBox(subtaskText);
-                    subtaskCheck->setStyleSheet("font-size: 12px; color: #c0c0c0;");
-                    subtaskCheck->setChecked(false);
-                    connect(subtaskCheck, &QCheckBox::clicked, this, [this, rid = reminder.id, subtaskIndex](bool checked)
-                            {
-                                Reminder *target = findReminderById(store.items(), rid);
-                                if (!target)
-                                    return;
-                                if (subtaskIndex < 0 || subtaskIndex >= target->checklistItems.size())
-                                    return;
-                                if (target->checklistItems[subtaskIndex].checked == checked)
-                                    return;
-
-                                target->checklistItems[subtaskIndex].checked = checked;
-                                commitReminderChanges(); });
-                    infoBox->addWidget(subtaskCheck);
-                }
-
-                if (!hasPendingSubtasks)
-                {
-                    auto *allDoneLabel = new QLabel("All subtasks done for this period.");
-                    allDoneLabel->setStyleSheet("font-size: 12px; color: #8f8f8f;");
-                    infoBox->addWidget(allDoneLabel);
-                }
-            }
-
-            auto *infoWrap = new QWidget();
-            infoWrap->setLayout(infoBox);
-
-            auto *actions = new QHBoxLayout();
-            actions->setSpacing(10);
-            actions->setContentsMargins(0, 0, 0, 0);
-
-            auto *editBtn = new QPushButton("Edit");
-            auto *delBtn = new QPushButton("Delete");
-            editBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
-            delBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
-
-            connect(editBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { editReminderById(rid); });
-            connect(delBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { deleteReminderById(rid); });
-
-            if (reminder.repeating)
-            {
-                auto *checklistBtn = new QPushButton("Subtasks");
-                checklistBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
-                connect(checklistBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { editChecklistById(rid); });
-                actions->addWidget(checklistBtn);
-            }
-            actions->addWidget(editBtn);
-            actions->addWidget(delBtn);
-
-            auto *actionsWrap = new QWidget();
-            actionsWrap->setLayout(actions);
-
-            root->addWidget(leftTime);
-            root->addWidget(infoWrap, 1);
-            root->addWidget(actionsWrap);
+                    target->checklistItems[subtaskIndex].checked = checked;
+                    commitReminderChanges();
+                });
+            countdownLabels.insert(rid, countdown);
 
             auto *item = new QListWidgetItem();
             item->setSizeHint(QSize(0, qMax(kMinimumRowHeight, row->sizeHint().height())));
@@ -2129,6 +2267,7 @@ void MainWindow::refreshUI()
         }
     }
 
+    updateBoard();
     refreshCompletedPreview();
     updateOverlayContents();
 }
@@ -2203,18 +2342,15 @@ void MainWindow::setCompletedPreviewCollapsed(bool collapsed, bool animate)
 void MainWindow::showAllCompletedDialog()
 {
     QDialog dialog(this);
-    dialog.setWindowTitle("Completed Reminders");
+    dialog.setWindowTitle("History");
     dialog.resize(760, 480);
     dialog.setModal(true);
 
     auto *root = new QVBoxLayout(&dialog);
     auto *allList = new QListWidget(&dialog);
-    allList->setStyleSheet(R"(
-        QListWidget { background: #171717; border: 1px solid #2a2a2a; color: #eaeaea; }
-        QListWidget::item { border-bottom: 1px solid #242424; }
-    )");
     allList->setSpacing(0);
     allList->setUniformItemSizes(false);
+    allList->setSelectionMode(QAbstractItemView::NoSelection);
     root->addWidget(allList, 1);
 
     const auto &completed = store.completedItems();
@@ -2336,9 +2472,6 @@ bool MainWindow::confirmShortRepeatInterval(int intervalSeconds, const QString &
 
 void MainWindow::updateCountdownLabels()
 {
-    if (countdownLabels.isEmpty())
-        return;
-
     const QDateTime now = QDateTime::currentDateTime();
     for (const Reminder &reminder : store.items())
     {
@@ -2346,10 +2479,51 @@ void MainWindow::updateCountdownLabels()
         if (!label)
             continue;
 
-        label->setText(TimeFormat::formatCountdown(now.secsTo(reminder.nextLocal)));
+        const qint64 secondsLeft = now.secsTo(reminder.nextLocal);
+        label->setText(countdownCellText(secondsLeft));
+        setRole(label, secondsLeft <= 0 ? "cellDue" : "cellCountdown");
     }
+
+    updateBoard();
 }
 
+void MainWindow::updateBoard()
+{
+    const auto &items = store.items();
+    const QDateTime now = QDateTime::currentDateTime();
+
+    if (items.isEmpty())
+    {
+        boardNextId.clear();
+        boardNextCaption->setText("NEXT REMINDER");
+        boardNextTitle->setText("Nothing scheduled");
+        boardNextMeta->setText("Add one below and it'll show up here.");
+        boardCountdown->setText("--:--");
+        setRole(boardCountdown, "boardCountdownIdle");
+        return;
+    }
+
+    const Reminder &next = items.first();
+    const qint64 secondsLeft = now.secsTo(next.nextLocal);
+    if (boardNextId != next.id || boardNextTitle->text() != next.title)
+    {
+        boardNextId = next.id;
+        boardNextTitle->setText(next.title);
+    }
+
+    const QString day = dueDayText(next.nextLocal, now);
+    boardNextMeta->setText(QString("%1, %2  ·  %3")
+                               .arg(day, next.nextLocal.toString("h:mm AP"), repeatsCellText(next)));
+    boardNextCaption->setText(secondsLeft <= 0 ? "DUE NOW" : "NEXT REMINDER");
+    boardCountdown->setText(secondsLeft <= 0 ? QString("Now") : TimeFormat::formatCountdown(secondsLeft));
+    setRole(boardCountdown, "boardCountdown");
+}
+
+void MainWindow::updateInputPreview()
+{
+    setRole(inputStatusLabel, "hint");
+    inputStatusLabel->setText(inputPreviewHtml(input->text(), QDateTime::currentDateTime()));
+}
 void MainWindow::updateOverlayContents()
 {
     if (!overlayRowsLayout || !overlayBody)
@@ -2360,11 +2534,11 @@ void MainWindow::updateOverlayContents()
     const auto &items = store.items();
     if (items.isEmpty())
     {
-        auto *emptyLabel = new QLabel("No upcoming reminders.", overlayBody);
-        emptyLabel->setStyleSheet("color: #a7a7a7; font-size: 13px; padding-top: 4px;");
-        emptyLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        emptyLabel->installEventFilter(this);
-        overlayRowsLayout->addWidget(emptyLabel);
+        auto *emptyNote = new QLabel("No upcoming reminders", overlayBody);
+        emptyNote->setProperty("role", "overlayNote");
+        emptyNote->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        emptyNote->installEventFilter(this);
+        overlayRowsLayout->addWidget(emptyNote, 0, Qt::AlignLeft);
         overlayRowsLayout->addStretch(1);
         return;
     }
@@ -2375,24 +2549,23 @@ void MainWindow::updateOverlayContents()
     const OverlayLayoutMetrics layout = computeOverlayLayoutMetrics(overlayWidth);
     for (int i = 0; i < visibleCount; ++i)
     {
-        overlayRowsLayout->addWidget(createOverlayReminderRow(items[i], now, layout, overlayBody, this));
+        overlayRowsLayout->addWidget(createOverlayReminderRow(items[i], now, layout, i == 0, overlayBody, this));
         if (i < visibleCount - 1)
-            overlayRowsLayout->addSpacing(7);
+            overlayRowsLayout->addSpacing(6);
     }
 
     if (items.size() > visibleCount)
     {
-        overlayRowsLayout->addSpacing(4);
-        auto *moreLabel = new QLabel(QString("+%1 more").arg(items.size() - visibleCount), overlayBody);
-        moreLabel->setStyleSheet("color: #a7a7a7; font-size: 12px;");
-        moreLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-        moreLabel->installEventFilter(this);
-        overlayRowsLayout->addWidget(moreLabel);
+        overlayRowsLayout->addSpacing(6);
+        auto *moreNote = new QLabel(QString("+%1 more").arg(items.size() - visibleCount), overlayBody);
+        moreNote->setProperty("role", "overlayNote");
+        moreNote->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        moreNote->installEventFilter(this);
+        overlayRowsLayout->addWidget(moreNote, 0, Qt::AlignLeft);
     }
 
     overlayRowsLayout->addStretch(1);
 }
-
 void MainWindow::setOverlayVisible(bool visible)
 {
     overlayVisible = visible;

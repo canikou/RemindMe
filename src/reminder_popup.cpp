@@ -4,6 +4,8 @@
 
 #include <QCloseEvent>
 #include <QDateTime>
+#include <QFont>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -22,60 +24,69 @@ constexpr int kOverdueDisplayThresholdSeconds = 60;
 ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLocal, QWidget *parent)
     : QDialog(parent), m_id(std::move(reminderId)), m_title(std::move(title)), m_dueLocal(std::move(dueLocal))
 {
+    setObjectName("reminderPopup");
     setWindowFlag(Qt::WindowStaysOnTopHint, true);
     setWindowTitle(m_title);
     setModal(false);
-    resize(640, 360);
-
-    setStyleSheet(R"(
-        QDialog { background: #2b2b2b; color: #eaeaea; }
-        QLabel { color: #eaeaea; }
-        QPushButton {
-            background: #3a3a3a;
-            border: 1px solid #5a5a5a;
-            padding: 10px 18px;
-            font-size: 16px;
-        }
-        QPushButton:hover { background: #444444; }
-        QPushButton:pressed { background: #333333; }
-        QPushButton:focus { border: 1px solid #4ca3ff; }
-        QPushButton#doneButton { background: #2f6fb3; border: 1px solid #4ca3ff; }
-        QPushButton#doneButton:hover { background: #3a7fc6; }
-    )");
+    resize(560, 330);
 
     auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(24, 18, 24, 18);
-    root->setSpacing(14);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
 
-    timeLabel = new QLabel();
-    timeLabel->setAlignment(Qt::AlignCenter);
-    timeLabel->setStyleSheet("font-size: 42px; font-weight: 700;");
-    root->addWidget(timeLabel);
+    // The board card: the one loud moment in the app.
+    auto *boardCard = new QFrame();
+    boardCard->setObjectName("popupBoard");
+    auto *boardLayout = new QVBoxLayout(boardCard);
+    boardLayout->setContentsMargins(28, 22, 28, 24);
+    boardLayout->setSpacing(6);
 
-    overdueLabel = new QLabel();
-    overdueLabel->setAlignment(Qt::AlignCenter);
-    overdueLabel->setStyleSheet("font-size: 14px; font-weight: 700; color: #ff4d4d;");
-    overdueLabel->hide();
-    root->addWidget(overdueLabel);
+    auto *caption = new QLabel("REMINDER");
+    caption->setProperty("role", "boardLabel");
+    QFont captionFont = caption->font();
+    captionFont.setLetterSpacing(QFont::PercentageSpacing, 108);
+    caption->setFont(captionFont);
 
     titleLabel = new QLabel(m_title);
-    titleLabel->setAlignment(Qt::AlignCenter);
+    titleLabel->setProperty("role", "popupTitle");
     titleLabel->setWordWrap(true);
-    titleLabel->setStyleSheet("font-size: 26px; font-weight: 600;");
-    root->addWidget(titleLabel);
 
-    root->addStretch(1);
+    auto *dueLabel = new QLabel(QString("Due %1").arg(TimeFormat::formatDueDateTime(m_dueLocal)));
+    dueLabel->setProperty("role", "boardMuted");
+
+    boardLayout->addWidget(caption);
+    boardLayout->addWidget(titleLabel);
+    boardLayout->addWidget(dueLabel);
+    root->addWidget(boardCard);
+
+    auto *body = new QVBoxLayout();
+    body->setContentsMargins(28, 18, 28, 22);
+    body->setSpacing(8);
+
+    timeLabel = new QLabel();
+    timeLabel->setProperty("role", "popupClock");
+
+    overdueLabel = new QLabel();
+    overdueLabel->setProperty("role", "popupOverdue");
+    overdueLabel->hide();
+
+    body->addWidget(timeLabel);
+    body->addWidget(overdueLabel);
+    body->addStretch(1);
 
     auto *btnRow = new QHBoxLayout();
-    btnRow->setSpacing(14);
+    btnRow->setSpacing(10);
 
     snoozeBtn = new QPushButton("Snooze 5 min");
+    snoozeBtn->setToolTip("Remind me again in 5 minutes (Esc)");
     okBtn = new QPushButton("Done");
-    okBtn->setObjectName("doneButton");
+    okBtn->setObjectName("primaryButton");
     okBtn->setDefault(true);
-    btnRow->addWidget(snoozeBtn, 1);
-    btnRow->addWidget(okBtn, 1);
-    root->addLayout(btnRow);
+    btnRow->addStretch(1);
+    btnRow->addWidget(snoozeBtn);
+    btnRow->addWidget(okBtn);
+    body->addLayout(btnRow);
+    root->addLayout(body, 1);
 
     connect(okBtn, &QPushButton::clicked, this, &ReminderPopup::onOk);
     connect(snoozeBtn, &QPushButton::clicked, this, &ReminderPopup::onSnooze);
@@ -86,13 +97,14 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
     tick->start();
 
     onTick();
+    okBtn->setFocus();
     WinFocus::bringToFront(this);
 }
 
 void ReminderPopup::onTick()
 {
     const QDateTime now = QDateTime::currentDateTime();
-    timeLabel->setText(TimeFormat::formatClockTime(now));
+    timeLabel->setText(QString("It's %1").arg(TimeFormat::formatClockTime(now)));
 
     const qint64 overdueSeconds = m_dueLocal.secsTo(now);
     if (overdueSeconds >= kOverdueDisplayThresholdSeconds)

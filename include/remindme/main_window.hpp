@@ -16,6 +16,7 @@
 #include "remindme/reminder_store.hpp"
 
 class QAction;
+class QFrame;
 class QFile;
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -61,6 +62,8 @@ private:
     void refreshCompletedPreview();
     void updateGreetingMessage();
     void updateCountdownLabels();
+    void updateBoard();
+    void updateInputPreview();
     void updateOverlayContents();
     void setOverlayVisible(bool visible);
     void triggerDueReminders();
@@ -89,10 +92,17 @@ private:
     QLabel *titleLabel = nullptr;
     QLabel *nowLabel = nullptr;
     QPushButton *viewAllCompletedBtn = nullptr;
-    QCheckBox *overlayToggle = nullptr;
+    QPushButton *overlayToggle = nullptr;
+    QToolButton *moreBtn = nullptr;
+    QFrame *board = nullptr;
+    QLabel *boardNextCaption = nullptr;
+    QLabel *boardNextTitle = nullptr;
+    QLabel *boardNextMeta = nullptr;
+    QLabel *boardCountdown = nullptr;
+    QString boardNextId;
 
     QStackedWidget *stacked = nullptr;
-    QLabel *emptyLabel = nullptr;
+    QWidget *emptyState = nullptr;
     QListWidget *list = nullptr;
     QWidget *completedSection = nullptr;
     QLabel *completedHeaderLabel = nullptr;
@@ -102,7 +112,7 @@ private:
     QListWidget *completedList = nullptr;
 
     QLineEdit *input = nullptr;
-    QLabel *inputErrorLabel = nullptr;
+    QLabel *inputStatusLabel = nullptr;
 
     QTimer *tickTimer = nullptr;
     QWidget *overlayWindow = nullptr;

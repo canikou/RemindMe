@@ -25,3 +25,7 @@ cpp-mntchocoluvr/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Impeccable working files (decision sketches, review captures)
+.impeccable/mocks/
+.impeccable/review/

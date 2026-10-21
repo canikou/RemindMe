@@ -53,6 +53,17 @@ jobs:
       - name: Test (CI Release)
         run: ctest --preset ci-release --output-on-failure
 
+      # Renders the main window, overlay and popup in light and dark themes so
+      # UI changes can be reviewed from the run's artifacts.
+      - name: Render UI screenshots
+        run: ./build/ci-release/RemindMe_ui_screenshots.exe ui-screenshots
+
+      - name: Upload UI screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: RemindMe-ui-screenshots
+          path: ui-screenshots/*.png
+
       # Stages the portable package from the CI release build and fails if any
       # non-system DLL the app needs is missing from it. Runs from the MSYS2
       # shell so windeployqt and the toolchain DLLs are on PATH.

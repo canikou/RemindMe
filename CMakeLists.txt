@@ -135,6 +135,13 @@ if (BUILD_TESTING)
     endif()
 
     add_test(NAME ${APP_NAME}.core COMMAND ${TEST_TARGET})
+
+    # CI-only UI screenshot renderer; not a test and not installed.
+    if (Qt6_FOUND)
+        add_executable(${APP_NAME}_ui_screenshots tests/ui_screenshots.cpp)
+        target_link_libraries(${APP_NAME}_ui_screenshots PRIVATE ${CORE_TARGET})
+        project_apply_default_build_options(${APP_NAME}_ui_screenshots)
+    endif()
 endif()
 
 project_add_clang_tool_targets(
