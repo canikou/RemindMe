@@ -43,6 +43,26 @@ bool testParseAtTime()
     return r.ok && !r.isRelative && r.title == "Stand up" && r.timeOfDay.hour() == 7 && r.timeOfDay.minute() == 0;
 }
 
+bool testParseDateTime()
+{
+    const remindme::ParseResult a = remindme::Parser::parseInput("reinforce on october 24, 2099 6:30AM");
+    if (!a.ok || a.isRelative || a.title != "reinforce" || a.date != QDate(2099, 10, 24) || a.timeOfDay != QTime(6, 30))
+        return false;
+
+    const remindme::ParseResult b = remindme::Parser::parseInput("Pay rent at 6:30PM on 2099-01-05");
+    if (!b.ok || b.title != "Pay rent" || b.date != QDate(2099, 1, 5) || b.timeOfDay != QTime(18, 30))
+        return false;
+
+    const remindme::ParseResult c = remindme::Parser::parseInput("Party at 5 Dec 2099 8pm");
+    if (!c.ok || c.date != QDate(2099, 12, 5) || c.timeOfDay != QTime(20, 0))
+        return false;
+
+    return !remindme::Parser::parseInput("old on january 1, 2000 6:30AM").ok &&
+           !remindme::Parser::parseInput("x on feb 30, 2099 6:30AM").ok &&
+           !remindme::Parser::parseInput("x on october 24, 2099").ok &&
+           !remindme::Parser::parseInput("x on october 24, 2099 6:30AM every day").ok;
+}
+
 bool testParseTimeAmPmBoundaries()
 {
     const remindme::ParseResult midnight = remindme::Parser::parseInput("Midnight task at 12:00AM");
@@ -830,6 +850,12 @@ int main()
     if (!testParseAtTime())
     {
         std::cerr << "testParseAtTime failed\n";
+        return 1;
+    }
+    if (!testParseDateTime())
+    {
+        std::cerr << "testParseDateTime failed
+";
         return 1;
     }
     if (!testParseTimeAmPmBoundaries())

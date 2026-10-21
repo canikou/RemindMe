@@ -1675,7 +1675,13 @@ void MainWindow::onAddClicked()
         reminder.timeOfDay = parsed.timeOfDay;
         const int repeatWeekdayMask = WeekdayUtils::normalizeMask(parsed.repeatWeekdaysMask);
 
-        if (shouldRepeat && repeatWeekdayMask != 0)
+        if (parsed.date.isValid())
+        {
+            reminder.scheduleType = ScheduleType::AtTimeOfDay;
+            reminder.intervalSeconds = 0;
+            reminder.nextLocal = QDateTime(parsed.date, parsed.timeOfDay);
+        }
+        else if (shouldRepeat && repeatWeekdayMask != 0)
         {
             reminder.scheduleType = ScheduleType::AtTimeOfDay;
             reminder.intervalSeconds = 0;

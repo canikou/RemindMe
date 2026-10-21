@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.2.3 - 2026-10-21
+
+### Features
+
+- Reminders can now be set for a specific date: `Reinforce on October 24, 2026 6:30AM`, `Pay rent at 6:30PM on 2026-11-05`, `Party at 5 Dec 8pm`. Dates without a year pick the next occurrence. Past dates, impossible dates, missing times and combining a date with `every ...` are rejected with a clear message.
 
 ### Fixes
 

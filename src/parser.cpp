@@ -1,7 +1,9 @@
 #include "remindme/parser.hpp"
 #include "remindme/weekday_utils.hpp"
 
+#include <QDateTime>
 #include <QRegularExpression>
+#include <QStringList>
 #include <QStringView>
 #include <climits>
 #include <limits>
@@ -75,7 +77,7 @@ const QRegularExpression &repeatDirectiveRe()
 const QRegularExpression &scheduleKeywordRe()
 {
     static const QRegularExpression re(
-        R"(\b(in|at)\b)",
+        R"(\b(in|at|on)\b)",
         QRegularExpression::CaseInsensitiveOption);
     return re;
 }
@@ -92,6 +94,66 @@ const QRegularExpression &timeOfDayRe()
     static const QRegularExpression re(
         R"(^(\d{1,2})(?::(\d{2}))?([AaPp][Mm])?$)");
     return re;
+}
+
+const QString kMonthNames = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+
+int monthFromName(const QString &name)
+{
+    static const QStringList months = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"};
+    return months.indexOf(name.left(3).toLower()) + 1;
+}
+
+// Finds a date in s, removes it from s, and returns it. Year 0 means "not given".
+bool extractDate(QString &s, int &year, int &month, int &day)
+{
+    static const QRegularExpression monthDayRe(
+        QString(R"(\b(%1)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b)").arg(kMonthNames),
+        QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression dayMonthRe(
+        QString(R"(\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(%1)\.?(?:\s*,?\s*(\d{4}))?\b)").arg(kMonthNames),
+        QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression isoRe(R"(\b(\d{4})-(\d{1,2})-(\d{1,2})\b)");
+    static const QRegularExpression slashRe(R"(\b(\d{1,2})/(\d{1,2})/(\d{4})\b)");
+
+    QRegularExpressionMatch m;
+    if ((m = monthDayRe.match(s)).hasMatch())
+    {
+        month = monthFromName(m.captured(1));
+        day = m.captured(2).toInt();
+        year = m.captured(3).toInt();
+    }
+    else if ((m = dayMonthRe.match(s)).hasMatch())
+    {
+        day = m.captured(1).toInt();
+        month = monthFromName(m.captured(2));
+        year = m.captured(3).toInt();
+    }
+    else if ((m = isoRe.match(s)).hasMatch())
+    {
+        year = m.captured(1).toInt();
+        month = m.captured(2).toInt();
+        day = m.captured(3).toInt();
+    }
+    else if ((m = slashRe.match(s)).hasMatch())
+    {
+        month = m.captured(1).toInt();
+        day = m.captured(2).toInt();
+        year = m.captured(3).toInt();
+    }
+    else
+    {
+        return false;
+    }
+
+    s.remove(m.capturedStart(), m.capturedLength());
+    return true;
+}
+
+bool extractDateProbe(QString s)
+{
+    int y = 0, mo = 0, d = 0;
+    return extractDate(s, y, mo, d);
 }
 
 bool checkedAdd(qlonglong lhs, qlonglong rhs, qlonglong &out)
@@ -455,8 +517,20 @@ ParseResult Parser::parseInput(const QString &input)
         return r;
     }
 
-    const QString left = trimmed(expression.left(lastPos));
-    const QString right = trimmed(expression.mid(lastPos + lastLen));
+    QString left = trimmed(expression.left(lastPos));
+    QString right = trimmed(expression.mid(lastPos + lastLen));
+
+    // "<title> at <time> on <date>": fold the time into the right-hand side.
+    if (lastKw == "on")
+    {
+        static const QRegularExpression atTimeRe(R"(^(.*)\bat\s+([\d:\sAaPpMm]+)$)");
+        const QRegularExpressionMatch atMatch = atTimeRe.match(left);
+        if (atMatch.hasMatch() && !trimmed(atMatch.captured(1)).isEmpty())
+        {
+            right = trimmed(atMatch.captured(2)) + " " + right;
+            left = trimmed(atMatch.captured(1));
+        }
+    }
 
     if (left.isEmpty())
     {
@@ -491,7 +565,22 @@ ParseResult Parser::parseInput(const QString &input)
         r.isRelative = false;
         QTime t;
         QString err;
-        if (!parseTimeOfDay(right, t, err))
+        if (lastKw == "on" || extractDateProbe(right))
+        {
+            if (!parseDateTime(right, r.date, t, err))
+            {
+                r.ok = false;
+                r.error = err;
+                return r;
+            }
+            if (!repeatSpec.isEmpty())
+            {
+                r.ok = false;
+                r.error = "Repeat is not supported with a specific date.";
+                return r;
+            }
+        }
+        else if (!parseTimeOfDay(right, t, err))
         {
             r.ok = false;
             r.error = err;
@@ -645,6 +734,46 @@ bool Parser::parseTimeOfDay(const QString &s, QTime &outTime, QString &outError)
 
     outTime = QTime(hour, minute, 0);
     return outTime.isValid();
+}
+
+bool Parser::parseDateTime(const QString &s, QDate &outDate, QTime &outTime, QString &outError)
+{
+    QString rest = s;
+    int year = 0, month = 0, day = 0;
+    if (!extractDate(rest, year, month, day))
+    {
+        outError = "Couldn't parse date. Examples: \"on October 24, 2026 6:30AM\", \"on 2026-10-24 18:30\"";
+        return false;
+    }
+
+    rest.remove(',');
+    rest = rest.trimmed();
+    if (rest.isEmpty())
+    {
+        outError = "Add a time of day after the date, e.g. \"on October 24, 2026 6:30AM\".";
+        return false;
+    }
+    if (!parseTimeOfDay(rest, outTime, outError))
+        return false;
+
+    const QDateTime now = QDateTime::currentDateTime();
+    const bool yearGiven = year != 0;
+    QDate date(yearGiven ? year : now.date().year(), month, day);
+    if (!date.isValid())
+    {
+        outError = "That date doesn't exist.";
+        return false;
+    }
+    if (!yearGiven && QDateTime(date, outTime) <= now)
+        date = date.addYears(1);
+    if (QDateTime(date, outTime) <= now)
+    {
+        outError = "That date and time is already in the past.";
+        return false;
+    }
+
+    outDate = date;
+    return true;
 }
 
 bool Parser::parseRepeatIntervalToSeconds(const QString &s, int &outSeconds, QString &outError)
