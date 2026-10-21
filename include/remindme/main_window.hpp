@@ -102,6 +102,7 @@ private:
     QListWidget *completedList = nullptr;
 
     QLineEdit *input = nullptr;
+    QLabel *inputErrorLabel = nullptr;
 
     QTimer *tickTimer = nullptr;
     QWidget *overlayWindow = nullptr;

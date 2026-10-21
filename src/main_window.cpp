@@ -51,7 +51,7 @@
 #include <QStandardPaths>
 #include <QSystemTrayIcon>
 #include <QTime>
-#include <QTimeEdit>
+#include <QDateTimeEdit>
 #include <QTextStream>
 #include <QToolButton>
 #include <QUrl>
@@ -63,6 +63,7 @@
 #include <algorithm>
 #include <array>
 #include <functional>
+#include <utility>
 
 namespace remindme
 {
@@ -823,9 +824,10 @@ QString completedPatternText(const CompletedReminder &completed)
         return QString("Pattern: in %1").arg(TimeFormat::formatIntervalText(interval));
     }
 
+    // Completed entries are always one-shot reminders, so an empty mask means "no repeat", not "daily".
+    if (WeekdayUtils::normalizeMask(completed.repeatWeekdaysMask) == 0)
+        return QString("Pattern: at %1").arg(completed.timeOfDay.toString("h:mm AP"));
     const QString dayText = WeekdayUtils::maskDisplayText(completed.repeatWeekdaysMask);
-    if (dayText == "daily")
-        return QString("Pattern: at %1 daily").arg(completed.timeOfDay.toString("h:mm AP"));
     return QString("Pattern: at %1 on %2").arg(completed.timeOfDay.toString("h:mm AP"), dayText);
 }
 
@@ -921,6 +923,7 @@ struct EditReminderValues
     ScheduleType scheduleType = ScheduleType::Relative;
     QString relativeDelay;
     QTime timeOfDay;
+    QDateTime atDateTime; // full date + time for one-shot "at" reminders
     bool repeating = false;
     QString repeatInterval;
 };
@@ -954,9 +957,10 @@ bool showEditReminderDialog(QWidget *parent, const Reminder &reminder, EditRemin
     form->addRow(relativeLabel, relativeEdit);
 
     auto *timeLabel = new QLabel("At:");
-    auto *timeEdit = new QTimeEdit();
-    timeEdit->setDisplayFormat("h:mm AP");
-    timeEdit->setTime(reminder.timeOfDay.isValid() ? reminder.timeOfDay : reminder.nextLocal.time());
+    auto *timeEdit = new QDateTimeEdit();
+    timeEdit->setCalendarPopup(true);
+    const QDateTime initialAt = reminder.nextLocal.isValid() ? reminder.nextLocal : QDateTime::currentDateTime().addSecs(3600);
+    timeEdit->setDateTime(QDateTime(initialAt.date(), reminder.timeOfDay.isValid() ? reminder.timeOfDay : initialAt.time()));
     form->addRow(timeLabel, timeEdit);
 
     auto *repeatingCheck = new QCheckBox("Repeating");
@@ -980,6 +984,9 @@ bool showEditReminderDialog(QWidget *parent, const Reminder &reminder, EditRemin
 
         timeLabel->setVisible(!isRelative);
         timeEdit->setVisible(!isRelative);
+        // Repeating reminders only keep a time of day; one-shots keep the full date.
+        timeEdit->setDisplayFormat(repeatingCheck->isChecked() ? "h:mm AP" : "MMM d, yyyy h:mm AP");
+        timeEdit->setCalendarPopup(!repeatingCheck->isChecked());
 
         repeatLabel->setVisible(showRepeat);
         repeatEdit->setVisible(showRepeat);
@@ -989,9 +996,36 @@ bool showEditReminderDialog(QWidget *parent, const Reminder &reminder, EditRemin
     QObject::connect(repeatingCheck, &QCheckBox::toggled, &dialog, updateVisibility);
     updateVisibility();
 
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     root->addWidget(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    // Validate before closing so a typo doesn't throw away the user's other edits.
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]()
+                     {
+                         const auto validationError = [&]() -> QString
+                         {
+                             QString err;
+                             int seconds = 0;
+                             const bool isRelative = (typeCombo->currentIndex() == 0);
+                             const bool repeating = repeatingCheck->isChecked();
+                             if (titleEdit->text().trimmed().isEmpty())
+                                 return "Reminder title cannot be empty.";
+                             if (isRelative && !Parser::parseDurationToSeconds(relativeEdit->text().trimmed(), seconds, err))
+                                 return err;
+                             if (isRelative && repeating && !repeatEdit->text().trimmed().isEmpty() &&
+                                 !Parser::parseDurationToSeconds(repeatEdit->text().trimmed(), seconds, err))
+                                 return err;
+                             if (!isRelative && !repeating && timeEdit->dateTime() <= QDateTime::currentDateTime())
+                                 return "That date and time is already in the past.";
+                             return QString();
+                         };
+
+                         const QString err = validationError();
+                         if (!err.isEmpty())
+                         {
+                             QMessageBox::warning(&dialog, "Can't save reminder", err);
+                             return;
+                         }
+                         dialog.accept(); });
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     if (dialog.exec() != QDialog::Accepted)
@@ -1000,7 +1034,8 @@ bool showEditReminderDialog(QWidget *parent, const Reminder &reminder, EditRemin
     out.title = titleEdit->text().trimmed();
     out.scheduleType = (typeCombo->currentIndex() == 0) ? ScheduleType::Relative : ScheduleType::AtTimeOfDay;
     out.relativeDelay = relativeEdit->text().trimmed();
-    out.timeOfDay = timeEdit->time();
+    out.timeOfDay = QTime(timeEdit->time().hour(), timeEdit->time().minute());
+    out.atDateTime = QDateTime(timeEdit->date(), out.timeOfDay);
     out.repeating = repeatingCheck->isChecked();
     out.repeatInterval = repeatEdit->text().trimmed();
     return true;
@@ -1024,11 +1059,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             background: #2b2b2b; color: #eaeaea;
             border: 1px solid #3c3c3c; padding: 8px;
         }
+        QLineEdit:focus { border: 1px solid #4ca3ff; }
         QPushButton {
             background: #3a3a3a; color: #eaeaea;
             border: 1px solid #555; padding: 8px 12px;
         }
         QPushButton:hover { background: #444; }
+        QPushButton:pressed { background: #2f2f2f; }
+        QPushButton:focus { border: 1px solid #4ca3ff; }
+        QPushButton:disabled { background: #2a2a2a; color: #6f6f6f; border: 1px solid #3a3a3a; }
+        QPushButton#primaryButton { background: #2f6fb3; border: 1px solid #4ca3ff; }
+        QPushButton#primaryButton:hover { background: #3a7fc6; }
+        QPushButton#primaryButton:pressed { background: #285f9a; }
         QCheckBox { color: #eaeaea; }
     )");
 
@@ -1057,9 +1099,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     stacked = new QStackedWidget();
 
-    emptyLabel = new QLabel("No Reminders Yet!");
+    emptyLabel = new QLabel(
+        "<div style='font-size: 22px; font-weight: 700;'>No reminders yet</div>"
+        "<div style='font-size: 13px; color: #9f9f9f; margin-top: 8px;'>"
+        "Type one below and press Enter:<br>"
+        "Drink water in 45m &nbsp;&middot;&nbsp; Stand up at 7:00AM every weekday<br>"
+        "Dentist on October 24, 2026 6:30AM</div>");
+    emptyLabel->setTextFormat(Qt::RichText);
     emptyLabel->setAlignment(Qt::AlignCenter);
-    emptyLabel->setStyleSheet("font-size: 22px; opacity: 0.85;");
 
     list = new QListWidget();
     list->setStyleSheet(R"(
@@ -1124,15 +1171,28 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     auto *h = new QHBoxLayout();
     input = new QLineEdit();
-    input->setPlaceholderText(R"(e.g. "Drink water in 45m" or "Stand up at 7:00AM every day")");
+    input->setPlaceholderText(R"(e.g. "Drink water in 45m", "Stand up at 7:00AM every day", "Dentist on Oct 24 6:30AM")");
+    auto *addBtn = new QPushButton("Add");
+    addBtn->setObjectName("primaryButton");
     auto *exportBtn = new QPushButton("Export");
     auto *importBtn = new QPushButton("Import");
+    addBtn->setStyleSheet("font-size: 13px; padding: 8px 16px;");
     exportBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
     importBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
+    exportBtn->setToolTip("Copy all reminders to the clipboard as a share string");
+    importBtn->setToolTip("Add reminders from a share string");
     h->addWidget(input, 1);
+    h->addWidget(addBtn);
+    h->addSpacing(8);
     h->addWidget(exportBtn);
     h->addWidget(importBtn);
     v->addLayout(h);
+
+    inputErrorLabel = new QLabel();
+    inputErrorLabel->setWordWrap(true);
+    inputErrorLabel->setStyleSheet("font-size: 12px; color: #ff8080;");
+    inputErrorLabel->hide();
+    v->addWidget(inputErrorLabel);
 
     setCentralWidget(central);
 
@@ -1179,6 +1239,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(overlayToggle, &QCheckBox::toggled, this, &MainWindow::setOverlayVisible);
 
     connect(input, &QLineEdit::returnPressed, this, &MainWindow::onAddClicked);
+    connect(addBtn, &QPushButton::clicked, this, &MainWindow::onAddClicked);
+    connect(input, &QLineEdit::textEdited, inputErrorLabel, &QLabel::hide);
     connect(exportBtn, &QPushButton::clicked, this, &MainWindow::onExportClicked);
     connect(importBtn, &QPushButton::clicked, this, &MainWindow::onImportClicked);
 
@@ -1650,9 +1712,13 @@ void MainWindow::onAddClicked()
     const ParseResult parsed = Parser::parseInput(text);
     if (!parsed.ok)
     {
-        QMessageBox::warning(this, "Parse error", parsed.error);
+        // Inline instead of a modal so the user can fix the text in place.
+        inputErrorLabel->setText(parsed.error);
+        inputErrorLabel->show();
+        input->setFocus();
         return;
     }
+    inputErrorLabel->hide();
 
     const bool shouldRepeat = parsed.hasRepeatDirective;
 
@@ -1767,6 +1833,18 @@ void MainWindow::onImportClicked()
 void MainWindow::deleteReminderById(const QString &id)
 {
     auto &items = store.items();
+    if (const Reminder *target = findReminderById(std::as_const(items), id))
+    {
+        const QMessageBox::StandardButton answer = QMessageBox::question(
+            this,
+            "Delete reminder",
+            QString("Delete \"%1\"? This can't be undone.").arg(target->title),
+            QMessageBox::Yes | QMessageBox::Cancel,
+            QMessageBox::Cancel);
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+
     for (int i = 0; i < items.size(); ++i)
     {
         if (items[i].id != id)
@@ -1857,7 +1935,9 @@ void MainWindow::editReminderById(const QString &id)
             {
                 reminder.repeatWeekdaysMask = WeekdayUtils::normalizeMask(reminder.repeatWeekdaysMask);
             }
-            reminder.nextLocal = nextAtTimeLocal(values.timeOfDay, reminder.repeating ? reminder.repeatWeekdaysMask : 0);
+            reminder.nextLocal = reminder.repeating
+                                     ? nextAtTimeLocal(values.timeOfDay, reminder.repeatWeekdaysMask)
+                                     : values.atDateTime;
         }
 
         reminder.enforceChecklistConstraints();
@@ -1929,14 +2009,15 @@ void MainWindow::refreshUI()
             auto *due = new QLabel(TimeFormat::formatDueDateTime(reminder.nextLocal));
             due->setStyleSheet("font-size: 13px; color: #bfbfbf;");
 
-            const QString extraText = repeatingInfoText(reminder);
-
-            auto *extra = new QLabel(extraText);
-            extra->setStyleSheet("font-size: 13px; color: #8f8f8f;");
-
             infoBox->addWidget(title);
             infoBox->addWidget(due);
-            infoBox->addWidget(extra);
+
+            if (reminder.repeating)
+            {
+                auto *extra = new QLabel(repeatingInfoText(reminder));
+                extra->setStyleSheet("font-size: 13px; color: #8f8f8f;");
+                infoBox->addWidget(extra);
+            }
 
             if (!reminder.checklistItems.isEmpty())
             {
@@ -2026,7 +2107,7 @@ void MainWindow::refreshUI()
 
             if (reminder.repeating)
             {
-                auto *checklistBtn = new QPushButton("Subtask");
+                auto *checklistBtn = new QPushButton("Subtasks");
                 checklistBtn->setStyleSheet("font-size: 13px; padding: 8px 12px;");
                 connect(checklistBtn, &QPushButton::clicked, this, [this, rid = reminder.id]() { editChecklistById(rid); });
                 actions->addWidget(checklistBtn);
@@ -2279,7 +2360,7 @@ void MainWindow::updateOverlayContents()
     const auto &items = store.items();
     if (items.isEmpty())
     {
-        auto *emptyLabel = new QLabel("No remaining tasks.", overlayBody);
+        auto *emptyLabel = new QLabel("No upcoming reminders.", overlayBody);
         emptyLabel->setStyleSheet("color: #a7a7a7; font-size: 13px; padding-top: 4px;");
         emptyLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
         emptyLabel->installEventFilter(this);
@@ -2302,7 +2383,7 @@ void MainWindow::updateOverlayContents()
     if (items.size() > visibleCount)
     {
         overlayRowsLayout->addSpacing(4);
-        auto *moreLabel = new QLabel(QString("+%1 more task(s) not shown").arg(items.size() - visibleCount), overlayBody);
+        auto *moreLabel = new QLabel(QString("+%1 more").arg(items.size() - visibleCount), overlayBody);
         moreLabel->setStyleSheet("color: #a7a7a7; font-size: 12px;");
         moreLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
         moreLabel->installEventFilter(this);

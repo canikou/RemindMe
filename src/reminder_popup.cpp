@@ -36,8 +36,11 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
             padding: 10px 18px;
             font-size: 16px;
         }
-        QPushButton:focus { outline: none; }
         QPushButton:hover { background: #444444; }
+        QPushButton:pressed { background: #333333; }
+        QPushButton:focus { border: 1px solid #4ca3ff; }
+        QPushButton#doneButton { background: #2f6fb3; border: 1px solid #4ca3ff; }
+        QPushButton#doneButton:hover { background: #3a7fc6; }
     )");
 
     auto *root = new QVBoxLayout(this);
@@ -57,6 +60,7 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
 
     titleLabel = new QLabel(m_title);
     titleLabel->setAlignment(Qt::AlignCenter);
+    titleLabel->setWordWrap(true);
     titleLabel->setStyleSheet("font-size: 26px; font-weight: 600;");
     root->addWidget(titleLabel);
 
@@ -65,8 +69,10 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
     auto *btnRow = new QHBoxLayout();
     btnRow->setSpacing(14);
 
-    snoozeBtn = new QPushButton("Snooze (5 min.)");
-    okBtn = new QPushButton("OK");
+    snoozeBtn = new QPushButton("Snooze 5 min");
+    okBtn = new QPushButton("Done");
+    okBtn->setObjectName("doneButton");
+    okBtn->setDefault(true);
     btnRow->addWidget(snoozeBtn, 1);
     btnRow->addWidget(okBtn, 1);
     root->addLayout(btnRow);
@@ -124,6 +130,18 @@ void ReminderPopup::closeEvent(QCloseEvent *event)
         emit okPressed(m_id);
     }
     QDialog::closeEvent(event);
+}
+
+// Esc goes through reject(), which hides without a closeEvent; snooze so the reminder is never left stuck.
+void ReminderPopup::reject()
+{
+    // QDialog::closeEvent() calls reject() too, so only snooze when nothing was handled yet.
+    if (!m_actionHandled)
+    {
+        onSnooze();
+        return;
+    }
+    QDialog::reject();
 }
 
 void ReminderPopup::updateWindowTitle(qint64 overdueSeconds)

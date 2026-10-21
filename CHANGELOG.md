@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### User Experience
+
+- Parse errors now show inline under the input instead of a blocking dialog, and there's a visible **Add** button.
+- Deleting a reminder asks for confirmation first.
+- Pressing Esc on a reminder popup now snoozes it. Previously the popup hid without signalling, which left that reminder stuck until restart.
+- Popup buttons now read **Snooze 5 min** / **Done**. Done is the default button, long titles wrap, and keyboard focus is visible again.
+- Edit dialog keeps the date of one-shot "at" reminders (it used to reset them to the next occurrence of the time). It also validates before closing so a typo no longer discards the other edits.
+- Completed one-shot "at" reminders no longer show a misleading "daily" pattern.
+- Non-repeating reminders no longer show a "(None)" line. The empty state lists example inputs.
+- Buttons and inputs have focus, pressed and disabled states.
+
 ## 1.2.3 - 2026-10-21
 
 ### Features

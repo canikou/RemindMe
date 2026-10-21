@@ -31,6 +31,7 @@ private slots:
 
 private:
     void closeEvent(QCloseEvent *event) override;
+    void reject() override;
     void updateWindowTitle(qint64 overdueSeconds);
 
     QString m_id;
