@@ -28,3 +28,5 @@ FORM: Departures Board, position 1 on the ordered list (picked as IMPECCABLE'S P
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
 Signature move: the board header's next reminder with its amber countdown. The overlay repeats it as one mini board panel with ruled rows and the next row larger in amber, and a row reaching zero flips its Due-in cell to amber "Due now".
+
+Bolder pass (user-approved additions): the board countdown is a split-flap readout that flips per character (260ms, skipped when Windows animations are off). The announcement line reads "Now boarding" within 15 minutes and "Final call" when due. A 3px journey line under each row fills on a shared 6-hour scale, amber for the next row.

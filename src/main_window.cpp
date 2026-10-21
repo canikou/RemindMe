@@ -76,6 +76,7 @@ namespace
 {
 constexpr int kTickIntervalMs = 1000;
 constexpr qint64 kBoardingSeconds = 15 * 60;
+constexpr qint64 kJourneyHorizonSeconds = 6 * 60 * 60;
 constexpr int kDefaultReminderStepSeconds = 60;
 constexpr int kSnoozeSeconds = 5 * 60;
 constexpr int kMinimumRowHeight = 64;
@@ -990,14 +991,11 @@ QLabel *makeCapsLabel(const QString &text, const char *role, QWidget *parent = n
     return label;
 }
 
-// How far along a reminder's "journey" is: 0 when it was set (or a day out), 1 when it's due.
+// How close a reminder is on one shared scale, so rows compare: empty 6+ hours out, full when due.
 qreal journeyProgress(const Reminder &reminder, const QDateTime &now)
 {
-    const qint64 horizon = (reminder.scheduleType == ScheduleType::Relative && reminder.intervalSeconds > 0)
-                               ? reminder.intervalSeconds
-                               : 86400;
     const qint64 secondsLeft = now.secsTo(reminder.nextLocal);
-    return qBound<qreal>(0.0, 1.0 - (static_cast<qreal>(secondsLeft) / static_cast<qreal>(horizon)), 1.0);
+    return qBound<qreal>(0.0, 1.0 - (static_cast<qreal>(secondsLeft) / static_cast<qreal>(kJourneyHorizonSeconds)), 1.0);
 }
 
 // Thin track under a departure row that fills as the reminder approaches.

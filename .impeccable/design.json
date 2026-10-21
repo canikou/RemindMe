@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-21T14:04:42+00:00",
+  "generatedAt": "2026-10-21T14:14:04+00:00",
   "title": "Design System: RemindMe",
   "platform": "Native Windows desktop, Qt6 Widgets. Tokens live in src/theme.cpp (ThemePalette) and are substituted into one app-wide Qt style sheet; snippets below are HTML/CSS approximations for preview only. pt sizes are converted at 96 DPI (1pt = 1.333px).",
   "extensions": {

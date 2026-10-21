@@ -12,6 +12,9 @@
 - The overlay matches the board, and the next reminder's countdown is highlighted.
 - "Recently done" starts collapsed so the list gets the room.
 - Rows reaching zero show **Due now**.
+- The board countdown is a split-flap display: each digit is a tile that flips when it changes. The flip is skipped when Windows animations are turned off.
+- The board announces like a station: "Now boarding: …" within 15 minutes, "Final call: …" when due.
+- Each row has a journey line that fills as the reminder gets closer (one shared 6-hour scale), amber for the next one.
 
 ### Technical
 

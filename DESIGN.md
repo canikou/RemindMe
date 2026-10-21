@@ -297,10 +297,19 @@ Plain, quiet, and labelled in words.
 - Paper fill, Edge border, 4px panel padding. Items 6px 22px 6px 14px with 4px radius and a Paper Hover selection. Separators are 1px Hairline with 4px 6px margins.
 
 ### Departures Board header (signature)
-The board band carries a small Board Slate greeting and live clock (separated by a dot) on the left, with Overlay, History and More on the right. Below them sit the next reminder's title (Title) and its when/repeat meta (Hint, Board Slate) on the left. The countdown (Display, Departure Amber) sits bottom-right; it reads "Due now" when due and has no caption label.
+The board band carries a small Board Slate announcement line and live clock (separated by a dot) on the left, with Overlay, History and More on the right. The announcement reads "Now boarding: <title>" within 15 minutes of the next reminder and "Final call: <title>" once it's due; otherwise it shows the rotating greeting. Below that sit the next reminder's title (Title) and its when/repeat meta (Hint, Board Slate) on the left.
+
+The countdown sits bottom-right as a **split-flap readout** (`FlapDisplay`, `src/flap_display.cpp`):
+- Each character is its own Raised Board Navy tile (4px radius, 4px gap) with a Board Navy seam across the middle. Glyphs are Departure Amber, Segoe UI Variable Display 46px semibold. Colons and spaces are narrow, untiled separators.
+- When a character changes, its tile flips: the top half folds down to the hinge, then the new bottom half unfolds, over 260ms OutCubic, with the moving flap shaded toward the seam colour.
+- A change in length (59:59 to 1:00:00) snaps instead of flipping.
+- Due state reads "DUE NOW". The idle state reads "--:--" in Board Slate.
+- The flip is skipped when Windows "Show animations" is off (`SPI_GETCLIENTAREAANIMATION`) or `REMINDME_REDUCE_MOTION=1`.
 
 ### Departure table
-Paper list with an 8px radius and an Edge outline, no selection highlight, no hover fill. Each row is divided by a 1px Hairline and shows: time plus day, the reminder title (with "Subtasks n/m done" and subtask checkboxes beneath it on repeating reminders), the repeat rule, the right-aligned countdown, and the row actions. When a row's countdown reaches zero, its Due-in cell switches role from `cellCountdown` to `cellDue` (amber, 700). Changing a `role` at runtime requires `unpolish` / `polish`; use the existing `setRole()` helper.
+Paper list with an 8px radius and an Edge outline, no selection highlight, no hover fill. Each row is divided by a 1px Hairline and shows: time plus day, the reminder title (with "Subtasks n/m done" and subtask checkboxes beneath it on repeating reminders), the repeat rule, the right-aligned countdown, and the row actions. When a row's countdown reaches zero, its Due-in cell switches role from `cellCountdown` to `cellDue` (amber, 700).
+
+Under each row runs a 3px **journey line**: a Hairline track that fills as the reminder approaches, on one shared 6-hour scale (empty 6+ hours out, full when due). This keeps rows comparable. The next row fills in Due Amber (`due-text`); the others fill in Slate. Changing a `role` at runtime requires `unpolish` / `polish`; use the existing `setRole()` helper.
 
 ### Overlay panel
 A single mini board: one navy panel (`role="overlayPanel"`, 10px radius) with rows separated by 1px Raised Board Navy rules (`overlayRule`). The next row is larger, its title semibold and its countdown in Departure Amber (`overlayTimeNext`). Other rows use white figures (`overlayTime`). Checklist progress and the "+N more" note are 8pt Board Slate (`overlayMeta`). It shows up to 6 rows.
@@ -331,5 +340,5 @@ The one loud moment. A navy board card holds the reminder title (Headline) and "
 ### Known gaps (recorded, not rules)
 - Countdown figures do not set tabular figures explicitly; the overlay compensates by measuring columns with `QFontMetrics`.
 - The Windows title bar (DWM caption) is not coloured to match the theme.
-- A row reaching zero swaps its Due-in cell to amber with no motion. The only animation in the system is the "Recently done" slide (180ms, OutCubic, on `maximumHeight`).
+- A row reaching zero swaps its Due-in cell to amber with no motion. The system's motion is the board's split-flap flip (260ms) and the "Recently done" slide (180ms, OutCubic, on `maximumHeight`).
 - In light mode, the `QComboBox` drop-down button shows a platform-default edge (visible in the edit dialog).
