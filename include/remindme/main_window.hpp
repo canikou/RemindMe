@@ -26,6 +26,7 @@ class QVBoxLayout;
 namespace remindme
 {
 
+class FlapDisplay;
 class ReminderPopup;
 
 class MainWindow : public QMainWindow
@@ -97,7 +98,8 @@ private:
     QFrame *board = nullptr;
     QLabel *boardNextTitle = nullptr;
     QLabel *boardNextMeta = nullptr;
-    QLabel *boardCountdown = nullptr;
+    FlapDisplay *boardCountdown = nullptr;
+    QString greetingText;
     QString boardNextId;
 
     QStackedWidget *stacked = nullptr;
@@ -122,6 +124,7 @@ private:
     QPointer<ReminderPopup> activePopup;
     QStringList queuedPopupIds;
     QHash<QString, QLabel *> countdownLabels;
+    QHash<QString, QWidget *> journeyLines;
     int currentGreetingPeriod = -1;
     bool saveErrorShown = false;
     bool overlayVisible = false;

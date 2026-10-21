@@ -1,6 +1,7 @@
 #include "remindme/main_window.hpp"
 
 #include "remindme/app_info.hpp"
+#include "remindme/flap_display.hpp"
 #include "remindme/parser.hpp"
 #include "remindme/reminder_popup.hpp"
 #include "remindme/theme.hpp"
@@ -40,6 +41,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPainter>
 #include <QPropertyAnimation>
 #include <QProcess>
 #include <QPushButton>
@@ -73,6 +75,7 @@ namespace remindme
 namespace
 {
 constexpr int kTickIntervalMs = 1000;
+constexpr qint64 kBoardingSeconds = 15 * 60;
 constexpr int kDefaultReminderStepSeconds = 60;
 constexpr int kSnoozeSeconds = 5 * 60;
 constexpr int kMinimumRowHeight = 64;
@@ -987,10 +990,60 @@ QLabel *makeCapsLabel(const QString &text, const char *role, QWidget *parent = n
     return label;
 }
 
+// How far along a reminder's "journey" is: 0 when it was set (or a day out), 1 when it's due.
+qreal journeyProgress(const Reminder &reminder, const QDateTime &now)
+{
+    const qint64 horizon = (reminder.scheduleType == ScheduleType::Relative && reminder.intervalSeconds > 0)
+                               ? reminder.intervalSeconds
+                               : 86400;
+    const qint64 secondsLeft = now.secsTo(reminder.nextLocal);
+    return qBound<qreal>(0.0, 1.0 - (static_cast<qreal>(secondsLeft) / static_cast<qreal>(horizon)), 1.0);
+}
+
+// Thin track under a departure row that fills as the reminder approaches.
+class JourneyLine : public QWidget
+{
+public:
+    JourneyLine(bool isNext, QWidget *parent) : QWidget(parent), m_isNext(isNext)
+    {
+        setFixedHeight(3);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+
+    void setProgress(qreal progress)
+    {
+        if (qFuzzyCompare(progress + 1.0, m_progress + 1.0))
+            return;
+        m_progress = progress;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const ThemePalette &p = Theme::palette();
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(p.rule));
+        painter.drawRoundedRect(rect(), 1.5, 1.5);
+        if (m_progress <= 0.0)
+            return;
+        painter.setBrush(QColor(m_isNext ? p.dueText : p.muted));
+        painter.drawRoundedRect(QRectF(0, 0, width() * m_progress, height()), 1.5, 1.5);
+    }
+
+private:
+    bool m_isNext = false;
+    qreal m_progress = 0.0;
+};
+
 QWidget *createDepartureRow(
     const Reminder &reminder,
     const QDateTime &now,
+    bool isNext,
     QLabel *&outCountdown,
+    JourneyLine *&outJourney,
     QWidget *parent,
     const std::function<void()> &onEdit,
     const std::function<void()> &onDelete,
@@ -998,8 +1051,11 @@ QWidget *createDepartureRow(
     const std::function<void(int, bool)> &onSubtaskToggled)
 {
     auto *row = new QWidget(parent);
-    auto *root = new QHBoxLayout(row);
-    root->setContentsMargins(kRowPaddingH, 12, 8, 12);
+    auto *outer = new QVBoxLayout(row);
+    outer->setContentsMargins(kRowPaddingH, 12, 8, 10);
+    outer->setSpacing(10);
+    auto *root = new QHBoxLayout();
+    root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(12);
 
     auto *timeBox = new QVBoxLayout();
@@ -1090,6 +1146,12 @@ QWidget *createDepartureRow(
     root->addWidget(repeats, 0, Qt::AlignTop);
     root->addWidget(countdown, 0, Qt::AlignTop);
     root->addWidget(actionsWrap, 0, Qt::AlignTop);
+    outer->addLayout(root);
+
+    auto *journey = new JourneyLine(isNext, row);
+    journey->setProgress(journeyProgress(reminder, now));
+    outer->addWidget(journey);
+    outJourney = journey;
     return row;
 }
 
@@ -1325,9 +1387,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     boardNextMeta->setProperty("role", "boardMuted");
     nextText->addWidget(boardNextTitle);
     nextText->addWidget(boardNextMeta);
-    boardCountdown = new QLabel();
-    boardCountdown->setProperty("role", "boardCountdown");
-    boardCountdown->setAlignment(Qt::AlignRight | Qt::AlignBottom);
+    boardCountdown = new FlapDisplay();
+    boardCountdown->setGlyphPixelSize(46);
     nextRow->addLayout(nextText, 1);
     nextRow->addWidget(boardCountdown, 0, Qt::AlignBottom);
     boardLayout->addLayout(nextRow);
@@ -1923,7 +1984,7 @@ void MainWindow::updateGreetingMessage()
     const GreetingPeriod period = greetingPeriodForHour(QTime::currentTime().hour());
     const int periodValue = static_cast<int>(period);
 
-    if (periodValue == currentGreetingPeriod && !titleLabel->text().isEmpty())
+    if (periodValue == currentGreetingPeriod && !greetingText.isEmpty())
         return;
 
     currentGreetingPeriod = periodValue;
@@ -1933,7 +1994,8 @@ void MainWindow::updateGreetingMessage()
         return;
 
     const int pick = QRandomGenerator::global()->bounded(pool.size());
-    titleLabel->setText(pool.at(pick));
+    greetingText = pool.at(pick);
+    updateBoard();
 }
 
 void MainWindow::onTick()
@@ -2168,6 +2230,7 @@ void MainWindow::refreshUI()
     store.sortSoonestFirst();
     const auto &items = store.items();
     countdownLabels.clear();
+    journeyLines.clear();
     list->clear();
 
     if (items.isEmpty())
@@ -2183,10 +2246,13 @@ void MainWindow::refreshUI()
         {
             const QString rid = reminder.id;
             QLabel *countdown = nullptr;
+            JourneyLine *journey = nullptr;
             QWidget *row = createDepartureRow(
                 reminder,
                 now,
+                rid == items.first().id,
                 countdown,
+                journey,
                 list,
                 [this, rid]() { editReminderById(rid); },
                 [this, rid]() { deleteReminderById(rid); },
@@ -2203,6 +2269,7 @@ void MainWindow::refreshUI()
                     commitReminderChanges();
                 });
             countdownLabels.insert(rid, countdown);
+            journeyLines.insert(rid, journey);
 
             auto *item = new QListWidgetItem();
             item->setSizeHint(QSize(0, qMax(kMinimumRowHeight, row->sizeHint().height())));
@@ -2426,6 +2493,9 @@ void MainWindow::updateCountdownLabels()
         const qint64 secondsLeft = now.secsTo(reminder.nextLocal);
         label->setText(countdownCellText(secondsLeft));
         setRole(label, secondsLeft <= 0 ? "cellDue" : "cellCountdown");
+
+        if (auto *journey = static_cast<JourneyLine *>(journeyLines.value(reminder.id, nullptr)))
+            journey->setProgress(journeyProgress(reminder, now));
     }
 
     updateBoard();
@@ -2435,14 +2505,16 @@ void MainWindow::updateBoard()
 {
     const auto &items = store.items();
     const QDateTime now = QDateTime::currentDateTime();
+    const ThemePalette &palette = Theme::palette();
 
     if (items.isEmpty())
     {
         boardNextId.clear();
+        titleLabel->setText(greetingText);
         boardNextTitle->setText("Nothing scheduled");
         boardNextMeta->setText("Add one below and it'll show up here.");
-        boardCountdown->clear();
-        setRole(boardCountdown, "boardCountdownIdle");
+        boardCountdown->setColors(QColor(palette.boardRaised), QColor(palette.boardMuted), QColor(palette.board));
+        boardCountdown->setText("--:--");
         return;
     }
 
@@ -2454,12 +2526,20 @@ void MainWindow::updateBoard()
         boardNextTitle->setText(next.title);
     }
 
+    // Station-style announcement when the next one is close; the greeting otherwise.
+    if (secondsLeft <= 0)
+        titleLabel->setText(QString("Final call: %1").arg(next.title));
+    else if (secondsLeft <= kBoardingSeconds)
+        titleLabel->setText(QString("Now boarding: %1").arg(next.title));
+    else
+        titleLabel->setText(greetingText);
+
     const QString day = dueDayText(next.nextLocal, now);
     boardNextMeta->setText(QString("%1, %2  ·  %3")
                                .arg(day, next.nextLocal.toString("h:mm AP"), repeatsCellText(next)));
     // The countdown slot carries the due state; no separate caption.
-    boardCountdown->setText(secondsLeft <= 0 ? QString("Due now") : TimeFormat::formatCountdown(secondsLeft));
-    setRole(boardCountdown, "boardCountdown");
+    boardCountdown->setColors(QColor(palette.boardRaised), QColor(palette.accent), QColor(palette.board));
+    boardCountdown->setText(secondsLeft <= 0 ? QString("DUE NOW") : TimeFormat::formatCountdown(secondsLeft));
 }
 
 void MainWindow::updateInputPreview()

@@ -109,6 +109,8 @@ int main(int argc, char *argv[])
         return 2;
     }
 
+    // Captures must show settled tiles, not a split-flap mid-fold.
+    qputenv("REMINDME_REDUCE_MOTION", "1");
     QApplication app(argc, argv);
     app.setApplicationName("RemindMe");
     app.setQuitOnLastWindowClosed(false);
