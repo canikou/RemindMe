@@ -136,6 +136,9 @@ QPushButton[role="rowDanger"]:focus { border-color: @focus; color: @danger; }
 
 QCheckBox { color: @text; spacing: 8px; }
 QCheckBox[role="subtask"] { color: @muted; }
+QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid @muted; border-radius: 3px; background: @surface; }
+QCheckBox::indicator:hover { border-color: @focus; }
+QCheckBox::indicator:checked { background: @focus; border-color: @focus; }
 
 QListWidget { background: @surface; border: 1px solid @border; border-radius: 8px; outline: none; }
 QListWidget::item { border-bottom: 1px solid @rule; }

@@ -944,6 +944,10 @@ QString repeatsCellText(const Reminder &reminder)
     if (reminder.scheduleType == ScheduleType::Relative)
     {
         const int interval = (reminder.intervalSeconds > 0) ? reminder.intervalSeconds : kDefaultReminderStepSeconds;
+        if (interval == 86400)
+            return "Daily";
+        if (interval == 3600)
+            return "Hourly";
         return QString("Every %1").arg(TimeFormat::formatIntervalText(interval));
     }
 
@@ -1155,7 +1159,8 @@ QWidget *createDepartureHeader(QWidget *parent)
     auto *header = new QWidget(parent);
     auto *root = new QHBoxLayout(header);
     // List border (1px) plus row padding keeps headers over their cells.
-    root->setContentsMargins(kRowPaddingH + 1, 0, 8 + 1, 0);
+    // The list keeps its scrollbar on (10px) so these offsets never shift.
+    root->setContentsMargins(kRowPaddingH + 1, 0, 8 + 1 + 10, 0);
     root->setSpacing(12);
 
     auto *time = makeCapsLabel("Time", "colHeader");
@@ -1427,6 +1432,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     list->setSelectionMode(QAbstractItemView::NoSelection);
     list->setFocusPolicy(Qt::NoFocus);
     list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     departuresLayout->addWidget(list, 1);
 
     stacked->addWidget(emptyState);
@@ -1476,7 +1482,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     completedPreviewAnim->setDuration(kCompletedSlideDurationMs);
     completedPreviewAnim->setEasingCurve(QEasingCurve::OutCubic);
     completedPreviewBody->setMaximumHeight(completedPreviewExpandedHeight());
-    setCompletedPreviewCollapsed(false, false);
+    // Collapsed by default so the departures get the room.
+    setCompletedPreviewCollapsed(true, false);
 
     bodyLayout->addSpacing(4);
     auto *h = new QHBoxLayout();
@@ -2498,7 +2505,7 @@ void MainWindow::updateBoard()
         boardNextCaption->setText("NEXT REMINDER");
         boardNextTitle->setText("Nothing scheduled");
         boardNextMeta->setText("Add one below and it'll show up here.");
-        boardCountdown->setText("--:--");
+        boardCountdown->clear();
         setRole(boardCountdown, "boardCountdownIdle");
         return;
     }

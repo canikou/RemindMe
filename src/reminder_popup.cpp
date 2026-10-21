@@ -51,7 +51,9 @@ ReminderPopup::ReminderPopup(QString reminderId, QString title, QDateTime dueLoc
     titleLabel->setProperty("role", "popupTitle");
     titleLabel->setWordWrap(true);
 
-    auto *dueLabel = new QLabel(QString("Due %1").arg(TimeFormat::formatDueDateTime(m_dueLocal)));
+    const bool dueToday = m_dueLocal.date() == QDate::currentDate();
+    auto *dueLabel = new QLabel(dueToday ? m_dueLocal.toString("'Due today at' h:mm AP")
+                                         : m_dueLocal.toString("'Due' ddd, MMM d 'at' h:mm AP"));
     dueLabel->setProperty("role", "boardMuted");
 
     boardLayout->addWidget(caption);

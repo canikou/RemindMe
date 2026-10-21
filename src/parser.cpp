@@ -513,7 +513,7 @@ ParseResult Parser::parseInput(const QString &input)
     if (lastPos < 0)
     {
         r.ok = false;
-        r.error = "Missing keyword. Use \"... in ...\" or \"... at ...\"";
+        r.error = "Say when: add \"in 45m\", \"at 7:00AM\" or \"on Oct 24 6:30AM\" after the reminder.";
         return r;
     }
 
