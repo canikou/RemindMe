@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1 - 2026-10-22
+
+### Fixes
+
+- Closing a reminder popup while the window was in the tray quit RemindMe. If that shutdown then stalled, the app was left running with no window, and every relaunch said "already running". RemindMe now only quits from the tray's **Quit**, or when the window closes and there is no tray.
+- The single-instance lock is released as soon as the app exits.
+- Opening RemindMe while it's already running now brings up its window instead of showing a message. If the running copy doesn't respond, you're offered to end it and start again.
+
 ## 1.3.0 - 2026-10-22
 
 ### Redesign: departures board
