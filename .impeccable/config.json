@@ -11,6 +11,12 @@
         ],
         "createdAt": "2026-10-21T13:26:03.432Z",
         "reason": "agent decision: spent, unshipped decision-round sketch; the 2px bottom border imitates the Fluent text-field underline"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "segoe ui variable",
+        "createdAt": "2026-10-21T14:32:08.232Z",
+        "reason": "agent decision: DESIGN.md documents Segoe UI Variable Text/Display as the system face; the detector reads the family stem 'segoe ui variable' as undeclared"
       }
     ]
   }

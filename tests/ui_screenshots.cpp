@@ -39,7 +39,14 @@ Reminder makeReminder(const QString &title, qint64 secondsFromNow, bool repeatin
     return r;
 }
 
-bool writeSampleData(bool withReminders, bool firstIsDue = false)
+struct Scene
+{
+    qint64 firstOffsetSeconds = 18 * 60 + 42;
+    QString firstTitle = "Stand up and stretch";
+    bool onlyFirst = false;
+};
+
+bool writeSampleData(bool withReminders, const Scene &scene = {})
 {
     remindme::ReminderStore store;
     QString err;
@@ -49,7 +56,11 @@ bool writeSampleData(bool withReminders, bool firstIsDue = false)
 
     if (withReminders)
     {
-        store.items().push_back(makeReminder("Stand up and stretch", firstIsDue ? -20 : 18 * 60 + 42, true, 2 * 3600));
+        store.items().push_back(makeReminder(scene.firstTitle, scene.firstOffsetSeconds, true, 2 * 3600));
+    }
+
+    if (withReminders && !scene.onlyFirst)
+    {
         Reminder meds = makeReminder("Take vitamins", 5 * 3600 + 48 * 60, true, 0, 0b0011111);
         meds.checklistItems = {{"Vitamin D", true}, {"Fish oil", false}, {"Refill water bottle", false}};
         store.items().push_back(meds);
@@ -187,14 +198,20 @@ int main(int argc, char *argv[])
             popup.hide();
         }
 
-        if (!writeSampleData(true, true))
-            return 1;
+        const std::pair<const char *, Scene> boardScenes[] = {
+            {"main-due-", {-20, "Stand up and stretch", false}},
+            {"main-boarding-", {8 * 60 + 5, "Stand up and stretch", false}},
+            {"main-long-", {86400 + 2 * 3600 + 5, "Submit the quarterly expense report to the finance team before Friday", true}},
+        };
+        for (const auto &[prefix, scene] : boardScenes)
         {
+            if (!writeSampleData(true, scene))
+                return 1;
             remindme::MainWindow window;
             window.resize(1020, 700);
             window.show();
             settle(800);
-            ok &= saveGrab(&window, QDir(outDir).filePath("main-due-" + suffix + ".png"));
+            ok &= saveGrab(&window, QDir(outDir).filePath(QString::fromLatin1(prefix) + suffix + ".png"));
             // The due reminder opens its own popup; hide it without acting on it.
             for (QWidget *top : QApplication::topLevelWidgets())
             {

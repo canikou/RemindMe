@@ -138,8 +138,14 @@ QFont FlapDisplay::glyphFont() const
 
 int FlapDisplay::tileWidth() const
 {
+    // Every tile is as wide as the widest glyph showing, so letters (DUE NOW) fit like digits do.
     const QFontMetrics metrics(glyphFont());
-    const int widest = qMax(metrics.horizontalAdvance(QLatin1Char('8')), metrics.horizontalAdvance(QLatin1Char('W')) * 3 / 4);
+    int widest = metrics.horizontalAdvance(QLatin1Char('8'));
+    for (const Cell &cell : m_cells)
+    {
+        if (!isSeparator(cell.current))
+            widest = qMax(widest, metrics.horizontalAdvance(cell.current));
+    }
     return widest + m_glyphPx * 30 / 100;
 }
 
@@ -180,6 +186,13 @@ void FlapDisplay::paintEvent(QPaintEvent *)
         QPainterPath path;
         path.addRoundedRect(tile, kTileRadiusPx, kTileRadiusPx);
         painter.fillPath(path, m_tile);
+        // Real flaps are two-tone: the upper half catches a little more light.
+        painter.save();
+        painter.setClipRect(QRectF(tile.left(), tile.top(), tile.width(), tile.height() / 2.0));
+        painter.fillPath(path, m_tile.lighter(112));
+        painter.restore();
+        if (glyph == QLatin1Char('-'))
+            return; // '-' is a blank tile (idle state); a dash would sit on the seam
         painter.setPen(m_glyph);
         painter.drawText(tile, Qt::AlignCenter, QString(glyph));
     };

@@ -1023,10 +1023,10 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::NoPen);
+        if (m_progress <= 0.0)
+            return; // 6+ hours out: no line at all, so far-off rows stay quiet
         painter.setBrush(QColor(p.rule));
         painter.drawRoundedRect(rect(), 1.5, 1.5);
-        if (m_progress <= 0.0)
-            return;
         painter.setBrush(QColor(m_isNext ? p.dueText : p.muted));
         painter.drawRoundedRect(QRectF(0, 0, width() * m_progress, height()), 1.5, 1.5);
     }
@@ -1337,6 +1337,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     boardBar->setSpacing(4);
     titleLabel = new QLabel();
     titleLabel->setProperty("role", "boardMuted");
+    titleLabel->setTextFormat(Qt::RichText);
     nowLabel = new QLabel();
     nowLabel->setProperty("role", "boardMuted");
     auto *barDot = new QLabel("·");
@@ -2508,11 +2509,12 @@ void MainWindow::updateBoard()
     if (items.isEmpty())
     {
         boardNextId.clear();
-        titleLabel->setText(greetingText);
+        titleLabel->setText(greetingText.toHtmlEscaped());
         boardNextTitle->setText("Nothing scheduled");
         boardNextMeta->setText("Add one below and it'll show up here.");
         boardCountdown->setColors(QColor(palette.boardRaised), QColor(palette.boardMuted), QColor(palette.board));
         boardCountdown->setText("--:--");
+        boardCountdown->setAccessibleName("Nothing scheduled");
         return;
     }
 
@@ -2525,12 +2527,13 @@ void MainWindow::updateBoard()
     }
 
     // Station-style announcement when the next one is close; the greeting otherwise.
+    const QString announcement = QString("<span style='color:%1; font-weight:700;'>%2</span>&nbsp;&nbsp;%3");
     if (secondsLeft <= 0)
-        titleLabel->setText(QString("Final call: %1").arg(next.title));
+        titleLabel->setText(announcement.arg(palette.accent, "FINAL CALL", next.title.toHtmlEscaped()));
     else if (secondsLeft <= kBoardingSeconds)
-        titleLabel->setText(QString("Now boarding: %1").arg(next.title));
+        titleLabel->setText(announcement.arg(palette.boardText, "NOW BOARDING", next.title.toHtmlEscaped()));
     else
-        titleLabel->setText(greetingText);
+        titleLabel->setText(greetingText.toHtmlEscaped());
 
     const QString day = dueDayText(next.nextLocal, now);
     boardNextMeta->setText(QString("%1, %2  ·  %3")
@@ -2538,6 +2541,11 @@ void MainWindow::updateBoard()
     // The countdown slot carries the due state; no separate caption.
     boardCountdown->setColors(QColor(palette.boardRaised), QColor(palette.accent), QColor(palette.board));
     boardCountdown->setText(secondsLeft <= 0 ? QString("DUE NOW") : TimeFormat::formatCountdown(secondsLeft));
+    // Painted tiles carry no text for screen readers; name them at minute resolution.
+    const QString spoken = secondsLeft <= 0 ? QString("Due now")
+                                            : QString("Due in %1").arg(TimeFormat::formatIntervalText(secondsLeft));
+    if (boardCountdown->accessibleName() != spoken)
+        boardCountdown->setAccessibleName(spoken);
 }
 
 void MainWindow::updateInputPreview()
