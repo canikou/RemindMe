@@ -176,7 +176,8 @@ void FlapDisplay::paintEvent(QPaintEvent *)
         painter.fillPath(path, m_tile);
         // Real flaps are two-tone: the upper half catches a little more light.
         painter.save();
-        painter.setClipRect(QRectF(tile.left(), tile.top(), tile.width(), tile.height() / 2.0));
+        // Intersect, not replace: while flipping, drawHalf() has already clipped to one half.
+        painter.setClipRect(QRectF(tile.left(), tile.top(), tile.width(), tile.height() / 2.0), Qt::IntersectClip);
         painter.fillPath(path, m_tile.lighter(112));
         painter.restore();
         if (glyph == QLatin1Char('-'))

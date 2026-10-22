@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- The split-flap flip no longer blanks the top half of a tile mid-flip, which made the new digit pop in at the end.
+
 ## 1.3.2 - 2026-10-23
 
 ### Changes
