@@ -6,13 +6,6 @@
 #include <QPainterPath>
 #include <QVariantAnimation>
 
-#ifdef Q_OS_WIN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
-
 namespace remindme
 {
 
@@ -54,16 +47,11 @@ bool FlapDisplay::isSeparator(QChar c)
     return c == ':' || c == ' ';
 }
 
+// Deliberately ignores Windows "Show animations": the flip is the app's one short animation (Kyo's call).
+// The env var is for screenshot captures, which need settled tiles.
 bool FlapDisplay::reduceMotion()
 {
-    if (qEnvironmentVariable("REMINDME_REDUCE_MOTION") == "1")
-        return true;
-#ifdef Q_OS_WIN
-    BOOL animate = TRUE;
-    if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &animate, 0))
-        return animate == FALSE;
-#endif
-    return false;
+    return qEnvironmentVariable("REMINDME_REDUCE_MOTION") == "1";
 }
 
 void FlapDisplay::setText(const QString &text)

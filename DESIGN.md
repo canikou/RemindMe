@@ -305,7 +305,7 @@ The countdown sits bottom-right as a **split-flap readout** (`FlapDisplay`, `src
 - A change in length (59:59 to 1:00:00) snaps instead of flipping.
 - Due state reads "DUE NOW". The idle state shows blank tiles (`-` draws an empty tile) around the colon.
 - The widget is named for screen readers ("Due in 18 minutes", "Due now"), updated only when the spoken text changes.
-- The flip is skipped when Windows "Show animations" is off (`SPI_GETCLIENTAREAANIMATION`) or `REMINDME_REDUCE_MOTION=1`.
+- The flip always runs, even when Windows "Show animations" is off: it is the app's one short animation. Only `REMINDME_REDUCE_MOTION=1` (used for CI screenshots) skips it.
 
 ### Departure table
 Paper list with an 8px radius and an Edge outline, no selection highlight, no hover fill. Each row is divided by a 1px Hairline and shows: time plus day, the reminder title (with "Subtasks n/m done" and subtask checkboxes beneath it on repeating reminders), the repeat rule, the right-aligned countdown, and the row actions. When a row's countdown reaches zero, its Due-in cell switches role from `cellCountdown` to `cellDue` (amber, 700).

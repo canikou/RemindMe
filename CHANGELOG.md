@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- The split-flap countdown now flips even when Windows "Show animations" is turned off. It is the app's only animation.
+
 ## 1.3.1 - 2026-10-22
 
 ### Fixes
