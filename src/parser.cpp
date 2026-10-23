@@ -559,7 +559,7 @@ ParseResult Parser::parseInput(const QString &input)
     if (lastKw == "at")
     {
         static const QRegularExpression trailingDayRe(
-            R"(^(.*\S)\s+(?:on\s+)?((?:next\s+|this\s+)?(?:today|tomorrow|monday|mon|tuesday|tues|tue|wednesday|weds|wed|thursday|thurs|thur|thu|friday|fri|saturday|sat|sunday|sun))$)",
+            R"(^(.*?\S)\s+(?:on\s+)?((?:next\s+|this\s+)?(?:today|tomorrow|monday|mon|tuesday|tues|tue|wednesday|weds|wed|thursday|thurs|thur|thu|friday|fri|saturday|sat|sunday|sun))$)",
             QRegularExpression::CaseInsensitiveOption);
         static const QRegularExpression trailingOnDateRe(R"(^(.*\S)\s+on\s+(.+)$)", QRegularExpression::CaseInsensitiveOption);
         const QRegularExpressionMatch dayMatch = trailingDayRe.match(left);
