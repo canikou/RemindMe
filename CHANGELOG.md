@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Weekdays work as dates: `vacuum room on sunday 8 AM`, `Call mom Friday at 7pm`, `Pay rent at 9am next Mon`. They mean the next time that day comes round (next week if that time already passed today).
+
 ## 1.3.3 - 2026-10-23
 
 ### Fixes

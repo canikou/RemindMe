@@ -27,6 +27,7 @@ Current version: `v1.3.3`.
 - `Hydrate in (3*10) minutes`
 - `Stand up at 7:00AM`
 - `Reinforce on October 24, 2026 6:30AM` (also `on 2026-10-24 18:30`, `at 6:30PM on 5 Dec 2026`)
+- `Vacuum room on Sunday 8 AM` (also `Call mom Friday at 7pm`, `Pay rent at 9am next Mon`, `Water plants tomorrow`)
 - `Daily check at 19:30`
 - `Stand up at 7:00AM every day`
 - `Hydrate in 10m every 2 hours`

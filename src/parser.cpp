@@ -105,8 +105,12 @@ int monthFromName(const QString &name)
 }
 
 // Finds a date in s, removes it from s, and returns it. Year 0 means "not given".
-bool extractDate(QString &s, int &year, int &month, int &day)
+// rollDaysIfPast is set when the date is "the next such weekday": add it if that time already passed today.
+bool extractDate(QString &s, int &year, int &month, int &day, int *rollDaysIfPast = nullptr)
 {
+    static const QRegularExpression weekdayRe(
+        R"(\b(?:next\s+|this\s+)?(monday|mon|tuesday|tues|tue|wednesday|weds|wed|thursday|thurs|thur|thu|friday|fri|saturday|sat|sunday|sun)\b)",
+        QRegularExpression::CaseInsensitiveOption);
     static const QRegularExpression monthDayRe(
         QString(R"(\b(%1)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?\b)").arg(kMonthNames),
         QRegularExpression::CaseInsensitiveOption);
@@ -150,12 +154,27 @@ bool extractDate(QString &s, int &year, int &month, int &day)
         day = m.captured(2).toInt();
         year = m.captured(3).toInt();
     }
+    else if ((m = weekdayRe.match(s)).hasMatch())
+    {
+        const QDate today = QDate::currentDate();
+        const int target = WeekdayUtils::weekdayFromToken(m.captured(1));
+        const QDate date = today.addDays((target - today.dayOfWeek() + 7) % 7);
+        year = date.year();
+        month = date.month();
+        day = date.day();
+        if (rollDaysIfPast)
+            *rollDaysIfPast = 7;
+        s.remove(m.capturedStart(), m.capturedLength());
+        return true;
+    }
     else
     {
         return false;
     }
 
     s.remove(m.capturedStart(), m.capturedLength());
+    // "Sunday, Oct 26": the explicit date wins; drop the weekday word so it isn't read as the time.
+    s.remove(weekdayRe);
     return true;
 }
 
@@ -536,15 +555,30 @@ ParseResult Parser::parseInput(const QString &input)
     QString left = trimmed(expression.left(lastPos));
     QString right = trimmed(expression.mid(lastPos + lastLen));
 
-    // "<title> today|tomorrow at <time>": fold the day into the right-hand side.
+    // "<title> [on] <day> at <time>" (tomorrow, sunday, oct 24...): fold the day into the right-hand side.
     if (lastKw == "at")
     {
-        static const QRegularExpression trailingDayRe(R"(^(.*\S)\s+(today|tomorrow)$)", QRegularExpression::CaseInsensitiveOption);
+        static const QRegularExpression trailingDayRe(
+            R"(^(.*\S)\s+(?:on\s+)?((?:next\s+|this\s+)?(?:today|tomorrow|monday|mon|tuesday|tues|tue|wednesday|weds|wed|thursday|thurs|thur|thu|friday|fri|saturday|sat|sunday|sun))$)",
+            QRegularExpression::CaseInsensitiveOption);
+        static const QRegularExpression trailingOnDateRe(R"(^(.*\S)\s+on\s+(.+)$)", QRegularExpression::CaseInsensitiveOption);
         const QRegularExpressionMatch dayMatch = trailingDayRe.match(left);
+        const QRegularExpressionMatch onMatch = trailingOnDateRe.match(left);
         if (dayMatch.hasMatch())
         {
             right = right + " " + dayMatch.captured(2);
             left = trimmed(dayMatch.captured(1));
+        }
+        else if (onMatch.hasMatch())
+        {
+            // Only fold when everything after "on" is a date, so "Turn on lights at 7pm" keeps its title.
+            QString candidate = onMatch.captured(2);
+            int y = 0, mo = 0, d = 0;
+            if (extractDate(candidate, y, mo, d) && candidate.remove(',').trimmed().isEmpty())
+            {
+                right = right + " " + onMatch.captured(2);
+                left = trimmed(onMatch.captured(1));
+            }
         }
     }
 
@@ -767,10 +801,10 @@ bool Parser::parseTimeOfDay(const QString &s, QTime &outTime, QString &outError)
 bool Parser::parseDateTime(const QString &s, QDate &outDate, QTime &outTime, QString &outError)
 {
     QString rest = s;
-    int year = 0, month = 0, day = 0;
-    if (!extractDate(rest, year, month, day))
+    int year = 0, month = 0, day = 0, rollDaysIfPast = 0;
+    if (!extractDate(rest, year, month, day, &rollDaysIfPast))
     {
-        outError = "Couldn't parse date. Examples: \"on October 24, 2026 6:30AM\", \"on 2026-10-24 18:30\"";
+        outError = "Couldn't parse date. Examples: \"on Sunday 8AM\", \"on October 24, 2026 6:30AM\", \"on 2026-10-24 18:30\"";
         return false;
     }
 
@@ -792,6 +826,8 @@ bool Parser::parseDateTime(const QString &s, QDate &outDate, QTime &outTime, QSt
         outError = "That date doesn't exist.";
         return false;
     }
+    if (rollDaysIfPast > 0 && QDateTime(date, outTime) <= now)
+        date = date.addDays(rollDaysIfPast);
     if (!yearGiven && QDateTime(date, outTime) <= now)
         date = date.addYears(1);
     if (QDateTime(date, outTime) <= now)

@@ -74,6 +74,38 @@ bool testParseDateTime()
     if (!g.ok || g.title != "Turn on lights" || g.date != tomorrow)
         return false;
 
+    // Weekdays mean the next time that weekday comes round, strictly in the future.
+    const auto isNextWeekday = [](const remindme::ParseResult &r, int dayOfWeek, QTime time)
+    {
+        const QDateTime now = QDateTime::currentDateTime();
+        const QDateTime when(r.date, r.timeOfDay);
+        return r.ok && r.date.dayOfWeek() == dayOfWeek && r.timeOfDay == time && when > now &&
+               when <= now.addDays(7);
+    };
+    const remindme::ParseResult h = remindme::Parser::parseInput("vacuum room on sunday 8 AM");
+    if (!isNextWeekday(h, 7, QTime(8, 0)) || h.title != "vacuum room")
+        return false;
+
+    const remindme::ParseResult i = remindme::Parser::parseInput("Call mom on Friday at 7pm");
+    if (!isNextWeekday(i, 5, QTime(19, 0)) || i.title != "Call mom")
+        return false;
+
+    const remindme::ParseResult j = remindme::Parser::parseInput("Call mom wed at 7pm");
+    if (!isNextWeekday(j, 3, QTime(19, 0)) || j.title != "Call mom")
+        return false;
+
+    const remindme::ParseResult k = remindme::Parser::parseInput("Pay rent at 9am on next mon");
+    if (!isNextWeekday(k, 1, QTime(9, 0)) || k.title != "Pay rent")
+        return false;
+
+    const remindme::ParseResult l = remindme::Parser::parseInput("Pay rent on Sunday, Oct 26 2099 9am");
+    if (!l.ok || l.date != QDate(2099, 10, 26) || l.timeOfDay != QTime(9, 0))
+        return false;
+
+    const remindme::ParseResult m = remindme::Parser::parseInput("Turn on lights at 7pm");
+    if (!m.ok || m.title != "Turn on lights" || m.date.isValid())
+        return false;
+
     return !remindme::Parser::parseInput("old on january 1, 2000 6:30AM").ok &&
            !remindme::Parser::parseInput("x on feb 30, 2099 6:30AM").ok &&
            !remindme::Parser::parseInput("x on october 24, 2099").ok &&
