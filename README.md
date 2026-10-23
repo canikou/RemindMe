@@ -1,7 +1,7 @@
 # RemindMe
 
 RemindMe is a Windows desktop reminders app built with C++23 and Qt6 Widgets.
-Current version: `v1.3.3`.
+Current version: `v1.4.0`.
 
 ## User Experience
 
@@ -146,7 +146,7 @@ RemindMe checks GitHub `releases/latest` at startup (throttled to once per day) 
 
 For seamless in-app auto-update behavior:
 
-- Publish with a semver tag like `v1.3.3`.
+- Publish with a semver tag like `v1.4.0`.
 - Attach a Windows installer asset with a filename containing `setup` or `installer` and extension `.exe` (recommended) or `.msi`.
 - Recommended asset name: `RemindMe-<version>-setup.exe`.
 - If only a portable `.zip` is attached, RemindMe can still download it, but install remains manual.
