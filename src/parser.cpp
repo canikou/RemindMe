@@ -85,7 +85,7 @@ const QRegularExpression &scheduleKeywordRe()
 const QRegularExpression &durationTokenRe()
 {
     static const QRegularExpression re(
-        R"(([\d\+\-\*\/\(\)\s]+)\s*(d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)\b)");
+        R"(([\d\+\-\*\/\(\)\s]+)\s*(d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)(?![a-z]))");
     return re;
 }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- Run-together durations work: `butterfly unlock in 3d19h17m` is 3 days 19 hours 17 minutes. Before, only the last part (`17m`) was counted.
+
 ## 1.4.0 - 2026-10-23
 
 ### Features

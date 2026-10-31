@@ -301,6 +301,12 @@ bool testRejectMalformedWeekdayRange()
     return !r.ok && !r.error.isEmpty();
 }
 
+bool testParseCompactDuration()
+{
+    const remindme::ParseResult r = remindme::Parser::parseInput("butterfly unlock in 3d19h17m");
+    return r.ok && r.title == "butterfly unlock" && r.durationSeconds == ((3 * 24 + 19) * 60 + 17) * 60;
+}
+
 bool testParseMathDuration()
 {
     int seconds = 0;
@@ -984,6 +990,11 @@ int main()
     if (!testRejectMalformedWeekdayRange())
     {
         std::cerr << "testRejectMalformedWeekdayRange failed\n";
+        return 1;
+    }
+    if (!testParseCompactDuration())
+    {
+        std::cerr << "testParseCompactDuration failed\n";
         return 1;
     }
     if (!testParseMathDuration())
