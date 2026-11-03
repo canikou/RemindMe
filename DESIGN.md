@@ -177,7 +177,7 @@ RemindMe reads like a station timetable. A deep navy board band carries the next
 
 The world is calm at rest and loud only at the moment of departure. Density is moderate, set by a fixed column grid rather than by cards. Everything is flat: depth comes from the one navy mass against a cool light ground (or a near-black blue ground in dark mode), never from shadows. Typography is Segoe UI throughout, so the app sits natively on Windows; hierarchy is carried by size and weight alone.
 
-This is a native Qt6 Widgets app, not a web page. Every token below lives in `src/theme.cpp` as a `ThemePalette` field (declared in `include/remindme/theme.hpp`) and is substituted into one app-wide Qt style sheet through `@token` placeholders. Widgets opt into a style through a dynamic `role` property (`QLabel[role="cellDue"]`) or an `objectName` (`QFrame#board`, `QPushButton#primaryButton`). The palette follows the Windows `AppsUseLightTheme` registry value, with `REMINDME_THEME=light|dark` as an override.
+This is a native desktop app (Rust + iced), not a web page. Every token below lives in `src/theme.rs` as a `Palette` field. Widget names below (QPushButton, QLabel roles) come from the 1.x Qt build; the same roles are styled in `src/theme.rs` and `src/app.rs`.
 
 **Key Characteristics:**
 - One navy board band per surface, carrying the next reminder.
@@ -299,7 +299,7 @@ Plain, quiet, and labelled in words.
 ### Departures Board header (signature)
 The board band carries a small Board Slate announcement line and live clock (separated by a dot) on the left, with Overlay, History and More on the right. The announcement reads **NOW BOARDING** (bold caps, Board White) followed by the title in Board Slate within 15 minutes of the next reminder. Once it's due it reads **FINAL CALL** in Departure Amber. Otherwise it shows the rotating greeting. The line is rich text, and titles are HTML-escaped. Below that sit the next reminder's title (Title) and its when/repeat meta (Hint, Board Slate) on the left.
 
-The countdown sits bottom-right as a **split-flap readout** (`FlapDisplay`, `src/flap_display.cpp`):
+The countdown sits bottom-right as a **split-flap readout** (`Flap`, `src/flap.rs`):
 - Each character is its own Raised Board Navy tile (4px radius, 4px gap). Tiles are two-tone (upper half `lighter(112)`) with a Board Navy seam across the middle, and sized to the widest glyph showing. Glyphs are Departure Amber, Segoe UI Variable Display 46px semibold. Colons and spaces are narrow, untiled separators.
 - When a character changes, its tile flips: the top half folds down to the hinge, then the new bottom half unfolds, over 260ms OutCubic, with the moving flap shaded toward the seam colour.
 - A change in length (59:59 to 1:00:00) snaps instead of flipping.

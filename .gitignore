@@ -1,9 +1,7 @@
 # Build outputs
-build/
+target/
 dist/
-out/
-CMakeUserPresets.json
-cpp-mntchocoluvr/
+.tools/
 *.zip
 
 # Keep shared VS Code config, ignore everything else in .vscode
@@ -11,7 +9,6 @@ cpp-mntchocoluvr/
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
-!.vscode/cpp.code-snippets
 
 # Other IDE metadata
 .vs/

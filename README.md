@@ -1,7 +1,7 @@
 # RemindMe
 
-RemindMe is a Windows desktop reminders app built with C++23 and Qt6 Widgets.
-Current version: `v1.4.1`.
+RemindMe is a desktop reminders app for Windows and Linux, written in Rust with [iced](https://iced.rs).
+Current version: `v2.0.0`.
 
 ## User Experience
 
@@ -17,7 +17,7 @@ Current version: `v1.4.1`.
 - Optional always-on-top compact overlay with drag support and guarded title/timer layout to avoid clipping.
 - Completed reminder history with quick re-add and a collapsible slide in/slide out preview in the main window.
 - Import/export share-string flow for moving reminders between instances.
-- Startup update checks against GitHub Releases with user-consent download and installer launch flow, prioritizing `setup.exe` assets for seamless upgrades.
+- Startup update checks against GitHub Releases with user-consent download and installer launch flow, using `setup.exe` on Windows and the AppImage on Linux.
 - Persistent JSON storage in Documents with automatic one-time migration from legacy app-data location.
 
 ## Input Examples
@@ -58,136 +58,65 @@ RemindMe is inspired by:
 
 This project is an independent work and is not affiliated with or endorsed by those products.
 
-## Technical / Development
+## Install
 
-This repository follows the `cpp23-mntchocoluvr` standardized layout and workflow (presets, VS Code tasks, CTest, CI, clang targets).
+- **Windows:** download `RemindMe-<version>-setup.exe` (or the portable `.zip`) from [Releases](https://github.com/canikou/RemindMe/releases). Upgrading from 1.x keeps your reminders.
+- **Linux:** download `RemindMe-<version>-x86_64.AppImage`, make it executable (`chmod +x`), and run it. On first run it adds itself to your app menu. Updates replace the AppImage in place.
 
-### Prerequisites
+Linux notes:
 
-- Windows with MSYS2 UCRT64 tools available on `PATH`
-- Required packages:
+- The tray icon needs a StatusNotifierItem tray. KDE, Cinnamon, XFCE and most others have one; on GNOME enable the *AppIndicator and KStatusNotifierItem Support* extension. Without a tray, closing the window quits the app.
+- RemindMe runs through XWayland on Wayland sessions, so the overlay can stay on top and due popups can come to the front (native Wayland allows neither).
+
+## Development
+
+Requirements: a stable Rust toolchain (`rustup`). Nothing else on Windows or Linux.
 
 ```bash
-pacman -S --needed \
-  mingw-w64-ucrt-x86_64-gcc \
-  mingw-w64-ucrt-x86_64-cmake \
-  mingw-w64-ucrt-x86_64-ninja \
-  mingw-w64-ucrt-x86_64-qt6-base \
-  mingw-w64-ucrt-x86_64-qt6-tools
+cargo run              # debug build of the app
+cargo test             # parser, scheduling, storage and update-rule tests
+cargo clippy --all-targets -- -D warnings
+cargo fmt
 ```
 
-The shared presets are path-agnostic. If Qt is not discoverable from `PATH`, set `CMAKE_PREFIX_PATH` or add a local, untracked `CMakeUserPresets.json`.
+Useful environment variables:
 
-For repository maintenance, prefer the installed CLI helpers: `rg` for search, `fd` for file discovery, `jq` for JSON, and `gh` for GitHub operations.
+- `REMINDME_THEME=dark|light` forces a theme.
+- `REMINDME_REDUCE_MOTION=1` settles the split-flap tiles (for screenshots).
+- `REMINDME_DEBUG=1` logs UI messages to stderr.
 
-### Standard Workflow (Presets + CTest)
+### Packaging
 
-Use presets first:
+- **Windows portable + setup.exe** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)):
+  ```powershell
+  cargo build --release
+  ./scripts/package-portable-release.ps1   # dist/RemindMe-<version>-windows-portable(.zip)
+  ./scripts/smoke-test-package.ps1 -PackageDir dist/RemindMe-<version>-windows-portable
+  ./scripts/package-setup-release.ps1      # dist/RemindMe-<version>-setup.exe
+  ```
+- **Linux AppImage** (downloads `linuxdeploy` into `.tools/`):
+  ```bash
+  cargo build --release
+  ./scripts/package-appimage.sh            # dist/RemindMe-<version>-x86_64.AppImage
+  ```
 
-1. Configure debug:
-   - `cmake --preset debug`
-2. Build debug:
-   - `cmake --build --preset debug --parallel`
-3. Run tests:
-   - `ctest --preset debug` 
-
-Convention gate:
-
-- `./scripts/check-conventions.ps1`
-- CI also runs this check before build/test.
-- CMake target equivalent: `cmake --build --preset debug --target conventions`
-- Additional build helper targets:
-  - `cmake --build --preset debug --target format-check`
-  - `cmake --build --preset debug --target lint`
-
-Release:
-
-1. Configure release:
-   - `cmake --preset release`
-2. Build release:
-   - `cmake --build --preset release --parallel`
-3. Run tests:
-   - `ctest --preset release`
-
-### Portable Release Packaging (Windows)
-
-1. Ensure release binary is built:
-   - `cmake --preset release`
-   - `cmake --build --preset release --parallel`
-2. Create portable folder + zip:
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable-release.ps1`
-
-Output:
-
-- `dist/RemindMe-<version>-windows-portable/`
-- `dist/RemindMe-<version>-windows-portable.zip`
-
-The script bundles the MinGW runtime and every non-system DLL Qt depends on (resolved from the MSYS2 toolchain `bin` directory) and fails if any dependency is left unresolved.
-
-3. Smoke test the package (launches it with a system-only `PATH`, like a machine without MSYS2):
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-test-package.ps1 -PackageDir dist/RemindMe-<version>-windows-portable`
-
-### Installer Release Packaging (Windows setup.exe)
-
-1. Build release and portable package:
-   - `cmake --preset release`
-   - `cmake --build --preset release --parallel`
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable-release.ps1`
-2. Build installer:
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-setup-release.ps1`
-
-Output:
-
-- `dist/RemindMe-<version>-setup.exe`
+CI (`.github/workflows/ci.yml`) builds, tests and packages both platforms, smoke-tests the packages, and uploads them as artifacts. The Linux AppImage is built on Ubuntu 22.04, so it runs on that glibc or newer.
 
 ### Auto-Update Release Contract (GitHub)
 
-RemindMe checks GitHub `releases/latest` at startup (throttled to once per day) and on tray action (`Check for Updates`).
+RemindMe checks GitHub `releases/latest` at startup (at most once per day) and from the tray or More menu.
 
-For seamless in-app auto-update behavior:
-
-- Publish with a semver tag like `v1.4.1`.
-- Attach a Windows installer asset with a filename containing `setup` or `installer` and extension `.exe` (recommended) or `.msi`.
-- Recommended asset name: `RemindMe-<version>-setup.exe`.
-- If only a portable `.zip` is attached, RemindMe can still download it, but install remains manual.
-
-### VS Code Workflow
-
-- `Ctrl+Shift+B`: default task `build (debug)`
-- `F5`: launch profile `Debug (Preset Debug Binary)`
-- Additional tasks:
-  - `configure (debug)` / `configure (release)`
-  - `build (debug)` / `build (release)`
-  - `test (debug)` / `test (release)`
-  - `format-check (debug)` / `lint (debug)`
+- Tag releases with a three-part semver tag like `v2.0.0`.
+- Attach `RemindMe-<version>-setup.exe` (Windows; 1.x clients also use it), `RemindMe-<version>-windows-portable.zip`, and `RemindMe-<version>-x86_64.AppImage` (Linux).
+- Linux asset names must not end in `.exe`, `.msi` or `.zip`, so Windows clients never pick them.
 
 ### Project Structure
 
-- `CMakeLists.txt`: template-aligned main build configuration
-- `CMakePresets.json`: local + CI presets (`debug`, `release`, `ci-debug`, `ci-release`, `ci-lint`)
-- `src/`: implementation files in `snake_case` (for example `main_window.cpp`)
-- `include/remindme/`: public project headers in `snake_case` (for example `main_window.hpp`)
-- `resources/`: app resources/icons
-- `scripts/package-portable-release.ps1`: creates portable Windows release folder + zip
-- `scripts/smoke-test-package.ps1`: launches a packaged/installed app with a system-only `PATH` to catch missing DLLs
-- `scripts/package-setup-release.ps1`: builds a versioned Windows `setup.exe` from the staged portable package
-- `installer/RemindMe.iss`: Inno Setup installer definition used by setup packaging script
-- `tests/core_tests.cpp`: baseline tests registered with CTest
-- `.vscode/`: standardized tasks, launch, settings, snippets
-- `.github/workflows/ci.yml`: CI for debug/release build and tests, plus portable + `setup.exe` packaging with install smoke tests
-
-### Naming Conventions
-
-- Project code is scoped under `namespace remindme`.
-- Project headers use `.hpp` and `snake_case` filenames.
-- Source files use `snake_case` filenames.
-
-### Binary Naming Convention
-
-- Debug builds output `app.exe`
-- Release builds output `RemindMe.exe`
-
-This keeps debug launch paths stable while preserving release naming.
+- `src/lib.rs` and modules: the UI-free core (`parser`, `schedule`, `store`, `weekday`, `time_format`, `greetings`, `update`).
+- `src/main.rs`, `src/app.rs`: the iced app (main window, overlay, due popups, dialogs); `src/theme.rs`, `src/flap.rs` for the look.
+- `src/platform.rs`: tray, single instance, AppImage desktop integration; `src/updater.rs`: download and install.
+- `tests/core_tests.rs`: tests, including files and share strings written by 1.x.
+- `installer/RemindMe.iss`, `scripts/`: Windows and Linux packaging.
 
 ### Contributing and Security
 

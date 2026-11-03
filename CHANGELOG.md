@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.0.0 - 2026-11-03
+
+RemindMe is rewritten in Rust and now runs on Linux as well as Windows.
+
+### Features
+
+- Linux support, shipped as an AppImage that adds itself to the app menu and updates itself in place.
+- Due popups ignore Enter and Esc for their first moment on screen, so a key meant for another app can't dismiss a reminder you haven't seen.
+
+### Changes
+
+- Built with Rust and iced instead of C++ and Qt. Windows is a single `RemindMe.exe` with no DLLs; the installer removes the old Qt files when upgrading.
+- Edit dialog: type the date and time ("Oct 24, 2026 6:30 AM", or just "7pm") instead of using a date picker.
+- Subtasks dialog: each subtask has its own Remove button.
+- Reminders, history, greetings and share strings from 1.x load unchanged.
+
 ## 1.4.1 - 2026-10-31
 
 ### Fixes

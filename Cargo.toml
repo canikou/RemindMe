@@ -1,0 +1,48 @@
+[package]
+name = "remindme"
+version = "2.0.0"
+edition = "2024"
+license = "MIT"
+description = "Natural-language desktop reminders with a tray, overlay and due popups"
+repository = "https://github.com/canikou/RemindMe"
+
+[lib]
+name = "remindme"
+path = "src/lib.rs"
+
+[[bin]]
+name = "RemindMe"
+path = "src/main.rs"
+
+[dependencies]
+chrono = "0.4"
+fancy-regex = "0.20"
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.23"
+sha2 = "0.11"
+dirs = "7"
+rand = "0.10"
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+# No "wayland": on Linux it runs through XWayland, where always-on-top, window placement
+# and focus for due popups work; native Wayland forbids all three.
+iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "tokio", "linux-theme-detection", "x11", "canvas"] }
+tokio = { version = "1", features = ["rt", "time"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3", features = ["blocking"] }
+
+[target.'cfg(windows)'.dependencies]
+tray-icon = "0.26"
+
+[build-dependencies]
+embed-resource = "3"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

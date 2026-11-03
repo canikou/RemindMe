@@ -6,15 +6,15 @@
 
 web
 
-<!-- Not a web app: RemindMe is a native Windows desktop app (C++23, Qt6 Widgets). "web" is the schema's closest value; the design language is Windows desktop, not iOS/Android. -->
+<!-- Not a web app: RemindMe is a native desktop app for Windows and Linux (Rust, iced). "web" is the schema's closest value; the design language is desktop, not iOS/Android. -->
 
 ## Stack
 
-Delegated: stay on C++23 + Qt6 Widgets (MSYS2 UCRT64, CMake presets, Inno Setup installer). Reasons: the parser, store, updater and packaging pipeline already work and ship. Saved reminders and auto-update from earlier versions must keep working. The redesign's goals (clarity, discoverability, a calmer glanceable layout) don't need QML's motion system, and moving to QML would mean rewriting most of the UI code with CI as the only build environment.
+Rust + iced (since 2.0, chosen by the owner for Windows + Linux support). Windows ships an Inno Setup installer and a portable zip; Linux ships an AppImage. Saved reminders, share strings and auto-update from 1.x must keep working.
 
 ## Users
 
-General Windows users, including non-technical people who will not learn an input syntax up front. They keep the PC on for long stretches (work, study, gaming) and want to be reminded of things without managing a to-do app.
+General Windows and Linux desktop users, including non-technical people who will not learn an input syntax up front. They keep the PC on for long stretches (work, study, gaming) and want to be reminded of things without managing a to-do app.
 
 ## Product Purpose
 
@@ -31,14 +31,14 @@ One-line natural-language capture ("Drink water in 45m", "Stand up at 7:00AM eve
 - When a reminder is due, a popup comes to the front and is acted on with Done or Snooze 5 min. Esc snoozes; closing with X counts as done.
 - Data lives in `Documents/RemindMe/reminders.json`. Greetings live in an editable `Documents/RemindMe/greetings.txt`.
 - Reminders move between machines with export/import share strings.
-- Updates come from GitHub Releases via the in-app updater, preferring `setup.exe`.
+- Updates come from GitHub Releases via the in-app updater, preferring `setup.exe` on Windows and the AppImage on Linux.
 
 ## Capabilities and Constraints
 
 - Schedule kinds: relative (`in …`), time of day (`at …`), specific date (`on <date> <time>`), repeat by interval (`every 2 hours`) or by weekdays (`every Mon-Fri`).
 - Subtasks exist only on repeating reminders and reset each period.
 - The history of completed one-time reminders keeps the last 50 and supports Add Again.
-- Single instance. Windows only.
+- Single instance. Windows and Linux (X11, or XWayland on Wayland sessions).
 - Must keep: typed natural-language input as the primary way to add reminders (user-confirmed). Supporting UI (preview, examples, a structured fallback) is allowed.
 - Must keep as features, but open to redesign in look and placement: overlay, tray, greetings, history.
 - The saved JSON format and the update/installer contract must stay backward compatible.
@@ -47,7 +47,7 @@ One-line natural-language capture ("Drink water in 45m", "Stand up at 7:00AM eve
 
 - No testimonials, user counts or press. Do not invent any.
 - App icon: `resources/icons/app.ico`, `resources/icons/app.png`.
-- Default greetings: `greetings.txt` and built-in pools in `src/main_window.cpp`.
+- Default greetings: `greetings.txt` and built-in pools in `src/greetings.rs`.
 
 ## Product Principles
 

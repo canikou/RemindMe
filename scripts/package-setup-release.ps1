@@ -67,10 +67,10 @@ Install it with:
 "@
 }
 
-$appName = Get-MatchValue -Path "CMakeLists.txt" -Pattern 'set\(APP_NAME\s+"([^"]+)"\)' -Label "APP_NAME"
+$appName = "RemindMe"
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    $Version = Get-MatchValue -Path "include/remindme/app_info.hpp" -Pattern 'kAppVersion\s*=\s*"([^"]+)"' -Label "app version"
+    $Version = Get-MatchValue -Path "Cargo.toml" -Pattern '(?m)^version\s*=\s*"([^"]+)"' -Label "app version"
 }
 
 if ([string]::IsNullOrWhiteSpace($DistDir)) {

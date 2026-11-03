@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=RemindMe
+Comment=Natural-language reminders with a tray, overlay and due popups
+Exec=RemindMe
+Icon=remindme
+Terminal=false
+Categories=Utility;
+StartupWMClass=remindme

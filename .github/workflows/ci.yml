@@ -8,73 +8,41 @@ on:
 permissions:
   contents: read
 
-jobs:
-  windows-msys2:
-    name: Windows (MSYS2 UCRT64)
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
+env:
+  CARGO_TERM_COLOR: always
 
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check conventions
-        shell: pwsh
-        run: ./scripts/check-conventions.ps1
-
-      - name: Setup MSYS2 (UCRT64)
-        uses: msys2/setup-msys2@v2
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-qt6-base
+          components: clippy, rustfmt
 
-      - name: Configure (CI Debug)
-        run: cmake --preset ci-debug
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Build (CI Debug)
-        run: cmake --build --preset ci-debug --parallel
+      - name: Format check
+        run: cargo fmt --check
 
-      - name: Test (CI Debug)
-        run: ctest --preset ci-debug --output-on-failure
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
 
-      - name: Configure (CI Release)
-        run: cmake --preset ci-release
+      - name: Test
+        run: cargo test
 
-      - name: Build (CI Release)
-        run: cmake --build --preset ci-release --parallel
+      - name: Build release
+        run: cargo build --release
 
-      - name: Test (CI Release)
-        run: ctest --preset ci-release --output-on-failure
-
-      # Renders the main window, overlay and popup in light and dark themes so
-      # UI changes can be reviewed from the run's artifacts.
-      - name: Render UI screenshots
-        run: ./build/ci-release/RemindMe_ui_screenshots.exe ui-screenshots
-
-      - name: Upload UI screenshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: RemindMe-ui-screenshots
-          path: ui-screenshots/*.png
-
-      # Stages the portable package from the CI release build and fails if any
-      # non-system DLL the app needs is missing from it. Runs from the MSYS2
-      # shell so windeployqt and the toolchain DLLs are on PATH.
       - name: Package portable release
-        run: >-
-          powershell -NoProfile -ExecutionPolicy Bypass
-          -File scripts/package-portable-release.ps1
-          -ReleaseBuildDir build/ci-release
+        shell: pwsh
+        run: ./scripts/package-portable-release.ps1
 
-      # Launches the packaged app with a system-only PATH, like an end-user
-      # machine without MSYS2, and fails if it cannot start.
+      # Launches the packaged app with a system-only PATH and fails if it cannot start.
       - name: Smoke test portable package
         shell: pwsh
         run: ./scripts/smoke-test-package.ps1 -PackageDir (Get-ChildItem dist -Directory -Filter "*-windows-portable").FullName
@@ -107,3 +75,43 @@ jobs:
           path: |
             dist/*-windows-portable.zip
             dist/*-setup.exe
+
+  linux:
+    name: Linux
+    # The oldest supported glibc: the AppImage runs on this distro or newer.
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package AppImage
+        run: ./scripts/package-appimage.sh
+
+      # Starts the AppImage on a virtual X display and fails if it exits during startup.
+      - name: Smoke test AppImage
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libxkbcommon-x11-0 > /dev/null
+          export HOME="$RUNNER_TEMP/home" APPIMAGE_EXTRACT_AND_RUN=1 && mkdir -p "$HOME"
+          xvfb-run -a bash -c 'dist/*.AppImage & pid=$!; sleep 10; kill -0 $pid && kill $pid'
+
+      - name: Upload release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: RemindMe-linux-packages
+          path: dist/*.AppImage

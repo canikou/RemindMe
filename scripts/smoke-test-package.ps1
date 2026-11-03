@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 # Launches the packaged app with PATH reduced to Windows system directories,
-# mirroring an end-user machine without MSYS2/Qt installed. Passes if the app
+# mirroring an end-user machine without developer tools installed. Passes if the app
 # is still running after the startup window; fails if it exits early (for
 # example with STATUS_DLL_NOT_FOUND because a DLL was not bundled).
 
@@ -41,7 +41,6 @@ $windowsDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
 $systemDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
 $originalPath = $env:PATH
 $env:PATH = "$systemDir;$windowsDir;$(Join-Path $systemDir 'Wbem')"
-$env:QT_FORCE_STDERR_LOGGING = "1"
 try {
     $process = Start-Process -FilePath $exePath -WorkingDirectory (Split-Path -Parent $exePath) -PassThru
 } finally {
