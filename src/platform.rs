@@ -103,7 +103,18 @@ pub fn claim_instance() -> Instance {
         // No writable lock location: run unguarded rather than not at all.
         return Instance::First(InstanceGuard { _lock: None });
     };
-    if lock.try_lock().is_err() {
+    // Right after a self-update the old copy is still quitting: wait for its lock instead of handing off to it.
+    let mut locked = lock.try_lock().is_ok();
+    if !locked && std::env::var_os("REMINDME_AFTER_UPDATE").is_some() {
+        for _ in 0..50 {
+            std::thread::sleep(Duration::from_millis(200));
+            if lock.try_lock().is_ok() {
+                locked = true;
+                break;
+            }
+        }
+    }
+    if !locked {
         return Instance::Other(ask_running_copy_to_show(&port_path));
     }
     // Later launches connect here and ask this copy to show itself instead of starting another.

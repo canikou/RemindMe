@@ -16,6 +16,13 @@ RemindMe is rewritten in Rust and now runs on Linux as well as Windows.
 - Subtasks dialog: each subtask has its own Remove button.
 - Reminders, history, greetings and share strings from 1.x load unchanged.
 
+### Removed
+
+- The "still running in the tray" notification when closing the window.
+- The prompt to end an unresponsive running copy; a second launch now just asks the running copy to show itself.
+- Moving `greetings.txt` from the pre-1.x app folder (1.x already moved it to Documents).
+- The slide animation on the Recently done preview.
+
 ## 1.4.1 - 2026-10-31
 
 ### Fixes

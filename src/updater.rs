@@ -149,6 +149,7 @@ pub fn install(downloaded: &Path) -> Result<(), String> {
         std::fs::rename(downloaded, &target)
             .map_err(|e| format!("Couldn't replace {}:\n{e}", target.display()))?;
         std::process::Command::new(&target)
+            .env("REMINDME_AFTER_UPDATE", "1")
             .spawn()
             .map(|_| ())
             .map_err(|_| "Failed to start the new version.".into())
