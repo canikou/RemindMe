@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1 - 2026-11-04
+
+### Fixes
+
+- Linux: the app menu and window switcher show the RemindMe icon instead of a generic gear, even when the desktop's icon cache is out of date.
+
 ## 2.0.0 - 2026-11-03
 
 RemindMe is rewritten in Rust and now runs on Linux as well as Windows.
