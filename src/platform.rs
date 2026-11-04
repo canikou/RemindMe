@@ -290,9 +290,11 @@ pub fn integrate_appimage() {
     let Some(data) = dirs::data_dir() else { return };
     let icon_dir = data.join("icons/hicolor/256x256/apps");
     let apps_dir = data.join("applications");
+    // Absolute icon path: a stale user icon-theme.cache hides icons looked up by name.
     let entry = format!(
-        "[Desktop Entry]\nType=Application\nName=RemindMe\nComment=Natural-language reminders\nExec=\"{}\"\nIcon=remindme\nTerminal=false\nCategories=Utility;\nStartupWMClass=remindme\n",
-        appimage.replace('"', "\\\"")
+        "[Desktop Entry]\nType=Application\nName=RemindMe\nComment=Natural-language reminders\nExec=\"{}\"\nIcon={}\nTerminal=false\nCategories=Utility;\nStartupWMClass=remindme\n",
+        appimage.replace('"', "\\\""),
+        icon_dir.join("remindme.png").display()
     );
     let _ = std::fs::create_dir_all(&icon_dir)
         .and_then(|_| std::fs::write(icon_dir.join("remindme.png"), ICON_PNG));
