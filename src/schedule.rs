@@ -70,7 +70,8 @@ pub fn reminder_from_parse(p: &ParseResult, now: DateTime<Local>) -> Reminder {
     } else if r.repeating && p.repeat_interval_seconds != 86400 {
         r.schedule_type = ScheduleType::Relative;
         r.interval_seconds = p.repeat_interval_seconds;
-        r.next = now + Duration::seconds(p.repeat_interval_seconds as i64);
+        // First fire is the next occurrence of the given time; later ones follow the interval.
+        r.next = next_at_time_from(time, now, 0);
     } else {
         r.schedule_type = ScheduleType::AtTimeOfDay;
         r.next = next_at_time_from(time, now, 0);

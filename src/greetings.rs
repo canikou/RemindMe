@@ -42,7 +42,6 @@ const EVENING: [&str; 10] = [
 ];
 
 const SECTIONS: [&str; 3] = ["[morning]", "[afternoon]", "[evening]"];
-const MARKER: &str = ".greetings_initialized";
 
 /// 0 = morning (5-11), 1 = afternoon (12-17), 2 = evening.
 pub fn period_for_hour(hour: u32) -> usize {
@@ -107,7 +106,6 @@ pub fn load(dir: &Path) -> Pools {
         let _ = fs::create_dir_all(dir);
         let _ = fs::write(&path, render(&defaults()));
     }
-    let _ = fs::write(dir.join(MARKER), "");
     fs::read_to_string(&path)
         .map(|t| parse(&t))
         .unwrap_or_else(|_| defaults())
