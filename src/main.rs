@@ -15,8 +15,8 @@ fn main() -> iced::Result {
         // The running copy was asked to show its window; nothing else to do.
         Instance::Other(answered) => {
             if !answered {
-                eprintln!(
-                    "RemindMe is already running but didn't respond. Close it and try again."
+                platform::show_error(
+                    "RemindMe is already running but didn't respond. Close it and try again.",
                 );
             }
             return Ok(());

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const CHECK_INTERVAL_SECONDS: i64 = 24 * 60 * 60;
+const MAX_DOWNLOAD_BYTES: u64 = 300 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub enum CheckResult {
@@ -29,7 +30,6 @@ fn agent(timeout: u64) -> ureq::Agent {
 }
 
 pub fn check() -> Result<CheckResult, String> {
-    record_check_now();
     let body: serde_json::Value = agent(15)
         .get(update::LATEST_RELEASE_API_URL)
         .header("Accept", "application/vnd.github+json")
@@ -38,6 +38,8 @@ pub fn check() -> Result<CheckResult, String> {
         .body_mut()
         .read_json()
         .map_err(|_| "Update metadata was invalid.".to_string())?;
+    // Only a completed check counts, so being offline at login retries next launch.
+    record_check_now();
     let tag = body
         .get("tag_name")
         .and_then(|v| v.as_str())
@@ -47,7 +49,7 @@ pub fn check() -> Result<CheckResult, String> {
     if tag.is_empty() {
         return Err("Latest release did not include a version tag.".into());
     }
-    if !update::is_remote_version_newer(&tag, remindme::APP_VERSION) {
+    if !update::compare_remote_tag(&tag, remindme::APP_VERSION)? {
         return Ok(CheckResult::UpToDate);
     }
     let release_url = body
@@ -95,17 +97,23 @@ pub fn download(asset: &UpdateAsset) -> Result<PathBuf, String> {
         .into_reader();
     let mut bytes = Vec::new();
     reader
+        .by_ref()
+        .take(MAX_DOWNLOAD_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| format!("Failed to download update:\n{e}"))?;
+    if bytes.len() as u64 > MAX_DOWNLOAD_BYTES {
+        return Err("Update download is unexpectedly large; aborted.".into());
+    }
 
-    if !asset.sha256_hex.is_empty() {
-        let actual: String = Sha256::digest(&bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        if actual != asset.sha256_hex.to_lowercase() {
-            return Err("Downloaded update failed checksum verification.".into());
-        }
+    if asset.sha256_hex.is_empty() {
+        return Err("Update has no checksum to verify; not installing it.".into());
+    }
+    let actual: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if actual != asset.sha256_hex.to_lowercase() {
+        return Err("Downloaded update failed checksum verification.".into());
     }
     std::fs::write(&final_path, &bytes)
         .map_err(|_| "Failed to open local file for update download.".to_string())?;
@@ -173,10 +181,13 @@ pub fn should_check_now() -> bool {
 fn record_check_now() {
     if let Some(p) = settings_path() {
         let _ = std::fs::create_dir_all(p.parent().unwrap_or(Path::new(".")));
-        let _ = std::fs::write(
-            p,
-            serde_json::json!({ "last_update_check_utc": chrono::Utc::now().timestamp() })
-                .to_string(),
-        );
+        // Keep any other settings in the file.
+        let mut settings = std::fs::read_to_string(&p)
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .filter(serde_json::Value::is_object)
+            .unwrap_or_else(|| serde_json::json!({}));
+        settings["last_update_check_utc"] = chrono::Utc::now().timestamp().into();
+        let _ = std::fs::write(p, settings.to_string());
     }
 }

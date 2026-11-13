@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! OS glue: tray icon, single-instance guard, opening URLs, Linux desktop integration.
 
+use std::fs::TryLockError;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -86,6 +87,28 @@ fn instance_paths() -> (PathBuf, PathBuf) {
     )
 }
 
+/// A visible error: the Windows GUI build has no console, so stderr goes nowhere.
+pub fn show_error(text: &str) {
+    #[cfg(windows)]
+    {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn MessageBoxW(
+                hwnd: *mut std::ffi::c_void,
+                text: *const u16,
+                caption: *const u16,
+                flags: u32,
+            ) -> i32;
+        }
+        let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+        let (text, caption) = (wide(text), wide(remindme::APP_NAME));
+        // 0x10 = MB_ICONERROR
+        unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), 0x10) };
+    }
+    #[cfg(not(windows))]
+    eprintln!("{text}");
+}
+
 pub enum Instance {
     First(InstanceGuard),
     /// Another copy is running; it was asked to show itself (true when it answered).
@@ -104,18 +127,25 @@ pub fn claim_instance() -> Instance {
         return Instance::First(InstanceGuard { _lock: None });
     };
     // Right after a self-update the old copy is still quitting: wait for its lock instead of handing off to it.
-    let mut locked = lock.try_lock().is_ok();
-    if !locked && std::env::var_os("REMINDME_AFTER_UPDATE").is_some() {
+    let mut state = lock.try_lock();
+    if matches!(state, Err(TryLockError::WouldBlock))
+        && std::env::var_os("REMINDME_AFTER_UPDATE").is_some()
+    {
         for _ in 0..50 {
             std::thread::sleep(Duration::from_millis(200));
-            if lock.try_lock().is_ok() {
-                locked = true;
+            state = lock.try_lock();
+            if !matches!(state, Err(TryLockError::WouldBlock)) {
                 break;
             }
         }
     }
-    if !locked {
-        return Instance::Other(ask_running_copy_to_show(&port_path));
+    match state {
+        Ok(()) => {}
+        // Only contention means another copy runs; any other error is like not being able to open the file.
+        Err(TryLockError::WouldBlock) => {
+            return Instance::Other(ask_running_copy_to_show(&port_path));
+        }
+        Err(TryLockError::Error(_)) => return Instance::First(InstanceGuard { _lock: None }),
     }
     // Later launches connect here and ask this copy to show itself instead of starting another.
     if let Ok(listener) = TcpListener::bind(("127.0.0.1", 0))
@@ -291,13 +321,27 @@ pub fn integrate_appimage() {
     let icon_dir = data.join("icons/hicolor/256x256/apps");
     let apps_dir = data.join("applications");
     // Absolute icon path: a stale user icon-theme.cache hides icons looked up by name.
+    // Exec quoting (\ " ` $ escaped with a backslash, % doubled), then the desktop-file string rule doubles each backslash.
+    let mut exec = String::new();
+    for c in appimage.chars() {
+        match c {
+            '\\' => exec.push_str("\\\\\\\\"),
+            '"' | '`' | '$' => {
+                exec.push_str("\\\\");
+                exec.push(c);
+            }
+            '%' => exec.push_str("%%"),
+            _ => exec.push(c),
+        }
+    }
+    let icon = icon_dir.join("remindme.png");
     let entry = format!(
-        "[Desktop Entry]\nType=Application\nName=RemindMe\nComment=Natural-language reminders\nExec=\"{}\"\nIcon={}\nTerminal=false\nCategories=Utility;\nStartupWMClass=remindme\n",
-        appimage.replace('"', "\\\""),
-        icon_dir.join("remindme.png").display()
+        "[Desktop Entry]\nType=Application\nName=RemindMe\nComment=Natural-language reminders\nExec=\"{exec}\"\nIcon={}\nTerminal=false\nCategories=Utility;\nStartupWMClass=remindme\n",
+        icon.display()
     );
-    let _ = std::fs::create_dir_all(&icon_dir)
-        .and_then(|_| std::fs::write(icon_dir.join("remindme.png"), ICON_PNG));
+    if std::fs::read(&icon).ok().as_deref() != Some(ICON_PNG) {
+        let _ = std::fs::create_dir_all(&icon_dir).and_then(|_| std::fs::write(&icon, ICON_PNG));
+    }
     let path = apps_dir.join("remindme.desktop");
     if std::fs::read_to_string(&path).ok().as_deref() != Some(entry.as_str()) {
         let _ = std::fs::create_dir_all(&apps_dir).and_then(|_| std::fs::write(path, entry));

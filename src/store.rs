@@ -2,12 +2,14 @@
 //! `Documents/RemindMe/reminders.json` and `RM1:` share strings, byte-compatible with 1.x.
 
 use crate::model::{ChecklistItem, CompletedReminder, Reminder, ScheduleType, new_id};
+use crate::schedule::SHORT_REPEAT_WARNING_SECONDS;
 use crate::weekday::normalize_mask;
 use base64::Engine;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use chrono::{DateTime, Local, NaiveTime, TimeZone};
 use serde_json::{Map, Value, json};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const STORAGE_VERSION: i64 = 4;
@@ -39,6 +41,8 @@ pub fn documents_app_dir() -> Option<PathBuf> {
 pub struct ReminderStore {
     storage_override: Option<PathBuf>,
     legacy_override: Option<PathBuf>,
+    /// Set when a file we couldn't read or back up is still on disk; save() then refuses to overwrite it.
+    save_blocked: bool,
     pub items: Vec<Reminder>,
     pub completed: Vec<CompletedReminder>,
 }
@@ -72,22 +76,26 @@ fn str_of(o: &Map<String, Value>, key: &str) -> String {
         .to_string()
 }
 
-/// Qt's toInt(): numbers only, defaulting otherwise.
-fn int_of(o: &Map<String, Value>, key: &str, default: i32) -> i32 {
-    match o.get(key) {
-        Some(Value::Number(n)) => n
-            .as_i64()
-            .or_else(|| n.as_f64().map(|f| f as i64))
-            .map_or(default, |v| v as i32),
-        _ => default,
-    }
+/// JSON numbers as i64 (floats truncate, like Qt).
+fn number_of(v: &Value) -> Option<i64> {
+    v.as_number()
+        .and_then(|n| n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)))
 }
 
+/// Qt's toInt(): numbers only, defaulting when missing or out of i32 range.
+fn int_of(o: &Map<String, Value>, key: &str, default: i32) -> i32 {
+    o.get(key)
+        .and_then(number_of)
+        .and_then(|v| i32::try_from(v).ok())
+        .unwrap_or(default)
+}
+
+/// Epoch seconds as a number or numeric string; None when absent or out of range.
 fn epoch_of(o: &Map<String, Value>, key: &str) -> Option<DateTime<Local>> {
-    let secs = match o.get(key)? {
-        Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64))?,
+    let v = o.get(key)?;
+    let secs = match v {
         Value::String(s) => s.trim().parse().ok()?,
-        _ => return None,
+        _ => number_of(v)?,
     };
     Local.timestamp_opt(secs, 0).single()
 }
@@ -134,7 +142,7 @@ fn reminder_from_json(v: &Value, require_id: bool) -> Option<Reminder> {
     let mut r = Reminder {
         id: str_of(o, "id"),
         title: str_of(o, "title"),
-        next: epoch_of(o, "next_epoch").unwrap_or_else(|| Local.timestamp_opt(0, 0).unwrap()),
+        next: epoch_of(o, "next_epoch").unwrap_or_else(Local::now),
         schedule_type: schedule_from(o.get("schedule")),
         interval_seconds: int_of(o, "interval_seconds", 0),
         time_of_day: time_from(o.get("time_of_day")),
@@ -171,8 +179,7 @@ fn completed_from_json(v: &Value) -> Option<CompletedReminder> {
         interval_seconds: int_of(o, "interval_seconds", 0),
         time_of_day: time_from(o.get("time_of_day")),
         repeat_weekdays_mask: normalize_mask(int_of(o, "repeat_weekdays_mask", 0)),
-        completed_at: epoch_of(o, "completed_epoch")
-            .unwrap_or_else(|| Local.timestamp_opt(0, 0).unwrap()),
+        completed_at: epoch_of(o, "completed_epoch").unwrap_or_else(Local::now),
         completion_count: int_of(o, "completion_count", 1).max(1),
     };
     (!c.id.is_empty() && !c.title.is_empty()).then_some(c)
@@ -183,12 +190,25 @@ fn migrate_legacy_if_needed(legacy: &Path, new: &Path) -> Result<(), String> {
         return Ok(());
     }
     if let Some(parent) = new.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|_| "Failed to create destination folder for reminders migration.")?;
+        fs::create_dir_all(parent).map_err(|e| {
+            format!("Failed to create destination folder for reminders migration: {e}")
+        })?;
     }
-    fs::copy(legacy, new)
-        .map(|_| ())
-        .map_err(|_| "Failed to migrate reminders data to the Documents folder.".into())
+    // Copy beside the target and rename, so a crash never leaves a partial file at the final path.
+    let tmp = new.with_extension("json.migrating");
+    fs::copy(legacy, &tmp)
+        .and_then(|_| fs::rename(&tmp, new))
+        .map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            format!("Failed to migrate reminders data to the Documents folder: {e}")
+        })
+}
+
+/// `reminders.json` -> `reminders.json.<tag>-<unix secs>` beside it.
+fn side_path(path: &Path, tag: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(format!(".{tag}-{}", chrono::Utc::now().timestamp()));
+    PathBuf::from(name)
 }
 
 impl ReminderStore {
@@ -222,34 +242,71 @@ impl ReminderStore {
     pub fn load(&mut self) -> Result<(), String> {
         self.items.clear();
         self.completed.clear();
+        self.save_blocked = false;
         let path = self.storage_path();
-        if let Some(legacy) = self.legacy_storage_path() {
-            migrate_legacy_if_needed(&legacy, &path)?;
+        let mut read_path = path.clone();
+        if let Some(legacy) = self.legacy_storage_path()
+            && migrate_legacy_if_needed(&legacy, &path).is_err()
+        {
+            // Show the old data rather than nothing; the first save then creates the new file from it.
+            read_path = legacy;
         }
-        if !path.exists() {
+        if !read_path.exists() {
             return Ok(()); // first run
         }
-        let bytes = fs::read(&path).map_err(|_| "Failed to open reminders file for reading.")?;
-        let root: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        let Some(root) = root.as_object() else {
-            return Err("Reminders file is corrupted (not a JSON object).".into());
+        let parsed = fs::read(&read_path)
+            .map_err(|e| format!("Failed to read reminders file: {e}"))
+            .and_then(|bytes| match serde_json::from_slice::<Value>(&bytes) {
+                Ok(Value::Object(root)) => Ok(root),
+                _ => Err("Reminders file is corrupted (not a JSON object).".to_string()),
+            });
+        let root = match parsed {
+            Ok(root) => root,
+            Err(why) => {
+                // The next save would overwrite this file with an empty list: move it aside first.
+                let backup = side_path(&read_path, "corrupt");
+                let kept = fs::rename(&read_path, &backup).is_ok()
+                    || fs::copy(&read_path, &backup).is_ok();
+                self.save_blocked = !kept;
+                return Err(if kept {
+                    format!("{why}\nThe original was kept as {}", backup.display())
+                } else {
+                    format!("{why}\nCould not back it up, so changes will not be saved.")
+                });
+            }
         };
+        let mut dropped = 0;
         if let Some(arr) = root.get("reminders").and_then(Value::as_array) {
             self.items = arr
                 .iter()
                 .filter_map(|v| reminder_from_json(v, true))
                 .collect();
+            dropped += arr.len() - self.items.len();
         }
         if let Some(arr) = root.get("completed").and_then(Value::as_array) {
             self.completed = arr.iter().filter_map(completed_from_json).collect();
+            dropped += arr.len() - self.completed.len();
         }
         let excess = self.completed.len().saturating_sub(MAX_COMPLETED_ITEMS);
         self.completed.drain(..excess);
         self.sort_soonest_first();
+        if dropped > 0 {
+            // The next save drops these entries for good; keep the original.
+            let backup = side_path(&read_path, "bak");
+            if let Err(e) = fs::copy(&read_path, &backup) {
+                self.save_blocked = true;
+                return Err(format!(
+                    "{dropped} unreadable entries were skipped and could not be backed up ({e}), so changes will not be saved."
+                ));
+            }
+        }
         Ok(())
     }
 
     pub fn save(&self) -> Result<(), String> {
+        if self.save_blocked {
+            return Err("Not saving: the existing reminders file could not be read or backed up, and saving would overwrite it.".into());
+        }
         let path = self.storage_path();
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
@@ -261,11 +318,18 @@ impl ReminderStore {
         });
         let mut text = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
         text.push('\n');
-        // Write then rename, so a crash mid-save never leaves a truncated file.
+        // Write, flush to disk, then rename, so a crash mid-save never leaves a truncated file.
         let tmp = path.with_extension("json.tmp");
-        fs::write(&tmp, text)
+        fs::File::create(&tmp)
+            .and_then(|mut f| {
+                f.write_all(text.as_bytes())?;
+                f.sync_all()
+            })
             .and_then(|_| fs::rename(&tmp, &path))
-            .map_err(|_| "Failed to open reminders file for writing.".into())
+            .map_err(|e| {
+                let _ = fs::remove_file(&tmp);
+                format!("Failed to write reminders file: {e}")
+            })
     }
 
     pub fn export_share_string(&self) -> String {
@@ -309,6 +373,13 @@ impl ReminderStore {
         for v in arr {
             if let Some(mut r) = reminder_from_json(v, false) {
                 r.id = new_id();
+                // Imports skip the app's short-repeat confirmation, so floor the interval here.
+                if r.repeating
+                    && r.schedule_type == ScheduleType::Relative
+                    && (1..SHORT_REPEAT_WARNING_SECONDS).contains(&r.interval_seconds)
+                {
+                    r.interval_seconds = SHORT_REPEAT_WARNING_SECONDS;
+                }
                 r.enforce_checklist_constraints();
                 self.items.push(r);
                 count += 1;
