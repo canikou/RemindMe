@@ -126,6 +126,7 @@ pub enum Message {
     ImportEdit(text_editor::Action),
     ImportConfirm,
     CloseModal,
+    External(External),
     Edit(String),
     EditTitle(String),
     EditRelative(bool),
@@ -412,16 +413,14 @@ impl App {
                 self.refresh_greeting();
                 self.trigger_due();
                 self.refresh_flap();
-                // Tray and second-launch requests are only picked up here, so at most 1s late.
-                let mut tasks = vec![self.show_next_popup(), self.resize_overlay()];
-                for e in platform::drain() {
-                    tasks.push(match e {
-                        External::ShowMain => self.open_main(),
-                        External::CheckUpdates => self.update(Message::CheckUpdates(true)),
-                        External::Quit => self.quit(),
-                    });
-                }
-                return Task::batch(tasks);
+                return Task::batch([self.show_next_popup(), self.resize_overlay()]);
+            }
+            Message::External(e) => {
+                return match e {
+                    External::ShowMain => self.open_main(),
+                    External::CheckUpdates => self.update(Message::CheckUpdates(true)),
+                    External::Quit => self.quit(),
+                };
             }
             Message::Frame => {}
             // None means "unknown" (e.g. a new X11 window); keep what we have.
@@ -519,7 +518,12 @@ impl App {
                     Err(e) => return self.message("Import error", e),
                 }
             }
-            Message::CloseModal => self.modal = None,
+            Message::CloseModal => {
+                // Declined installer: don't leave the download behind.
+                if let Some(Modal::InstallNow(path)) = self.modal.take() {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
             Message::Edit(id) => {
                 if let Some(r) = self.find(&id) {
                     let form = edit::edit_form(r, Local::now());
@@ -794,6 +798,7 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         let mut subs = vec![
             time::every(Duration::from_secs(1)).map(|_| Message::Tick),
+            Subscription::run(external_events),
             window::close_requests().map(Message::CloseRequested),
             iced::system::theme_changes().map(Message::ThemeChanged),
             event::listen_with(|e, _, id| match e {
@@ -1636,6 +1641,24 @@ impl App {
             .interaction(iced::mouse::Interaction::Grab)
             .into()
     }
+}
+
+/// Tray and second-launch requests, delivered as they happen. A plain thread does the blocking
+/// recv: a blocked runtime worker would stall shutdown, a detached thread does not.
+fn external_events() -> impl iced::futures::Stream<Item = Message> {
+    iced::stream::channel(16, async |mut out| {
+        std::thread::spawn(move || {
+            while let Some(e) = platform::recv() {
+                // Full or closed: only closed ends the loop; a full queue drops the request.
+                if out
+                    .try_send(Message::External(e))
+                    .is_err_and(|f| f.is_disconnected())
+                {
+                    break;
+                }
+            }
+        });
+    })
 }
 
 fn elide(s: &str, max_chars: usize) -> String {

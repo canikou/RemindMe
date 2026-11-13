@@ -629,8 +629,8 @@ fn release_assets() -> Vec<serde_json::Value> {
     vec![
         json!({"name": "RemindMe-2.0.0-windows-portable.zip", "browser_download_url": "https://example.com/p.zip"}),
         json!({"name": "RemindMe-2.0.0-installer.msi", "browser_download_url": "https://example.com/i.msi"}),
-        json!({"name": "RemindMe-2.0.0-setup.exe", "browser_download_url": "https://example.com/s.exe", "digest": "sha256:ABCDEF1234"}),
-        json!({"name": "RemindMe-2.0.0-x86_64.AppImage", "browser_download_url": "https://example.com/r.AppImage", "digest": "sha256:FEED"}),
+        json!({"name": "RemindMe-2.0.0-setup.exe", "browser_download_url": "https://example.com/s.exe", "digest": "sha256:ABCDEF0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789"}),
+        json!({"name": "RemindMe-2.0.0-x86_64.AppImage", "browser_download_url": "https://example.com/r.AppImage", "digest": "sha256:feedfeed0123456789abcdeffeedfeed0123456789abcdeffeedfeed01234567"}),
     ]
 }
 
@@ -639,7 +639,11 @@ fn pick_best_release_asset_per_platform() {
     let win = update::pick_best_release_asset(&release_assets(), Platform::Windows).unwrap();
     assert_eq!(
         (win.name.as_str(), win.sha256_hex.as_str(), win.is_installer),
-        ("RemindMe-2.0.0-setup.exe", "abcdef1234", true)
+        (
+            "RemindMe-2.0.0-setup.exe",
+            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+            true
+        )
     );
     let linux = update::pick_best_release_asset(&release_assets(), Platform::Linux).unwrap();
     assert_eq!(
@@ -648,7 +652,11 @@ fn pick_best_release_asset_per_platform() {
             linux.sha256_hex.as_str(),
             linux.is_installer
         ),
-        ("RemindMe-2.0.0-x86_64.AppImage", "feed", true)
+        (
+            "RemindMe-2.0.0-x86_64.AppImage",
+            "feedfeed0123456789abcdeffeedfeed0123456789abcdeffeedfeed01234567",
+            true
+        )
     );
     // 1.x clients rank by extension only; the AppImage must never outrank or tie their picks.
     assert_eq!(

@@ -35,12 +35,9 @@ pub fn send(e: External) {
     }
 }
 
-pub fn drain() -> Vec<External> {
-    external()
-        .1
-        .lock()
-        .map(|rx| rx.try_iter().collect())
-        .unwrap_or_default()
+/// Blocks until a request arrives; None if the channel is poisoned or closed.
+pub fn recv() -> Option<External> {
+    external().1.lock().ok()?.recv().ok()
 }
 
 pub fn icon_rgba() -> (Vec<u8>, u32, u32) {
