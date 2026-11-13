@@ -4,7 +4,7 @@
 
 use crate::model::local;
 use crate::weekday;
-use chrono::{DateTime, Datelike, Duration, Local, Months, NaiveDate, NaiveTime};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveTime};
 use fancy_regex::Regex;
 use std::sync::LazyLock;
 
@@ -40,34 +40,34 @@ re!(REPEAT_DIRECTIVE, r"(?i)^(.*)\bevery\b\s+(.+)$");
 re!(SCHEDULE_KEYWORD, r"(?i)\b(in|at|on)\b");
 re!(
     DURATION_TOKEN,
-    r"([\d\+\-\*\/\(\)\s]+)\s*(d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)(?![a-z])"
+    r"([0-9\+\-\*\/\(\)\s]+)\s*(d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)(?![a-z])"
 );
-re!(TIME_OF_DAY, r"^(\d{1,2})(?::(\d{2}))?([AaPp][Mm])?$");
+re!(TIME_OF_DAY, r"^([0-9]{1,2})(?::([0-9]{2}))?([AaPp][Mm])?$");
 re!(
     WEEKDAY,
     &format!(r"(?i)\b(?:next\s+|this\s+)?({DAY_WORDS})\b")
 );
 re!(
     MONTH_DAY,
-    &format!(r"(?i)\b({MONTHS})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{{4}}))?\b")
+    &format!(r"(?i)\b({MONTHS})\.?\s+([0-9]{{1,2}})(?:st|nd|rd|th)?(?:\s*,?\s*([0-9]{{4}}))?\b")
 );
 re!(
     DAY_MONTH,
     &format!(
-        r"(?i)\b(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?({MONTHS})\.?(?:\s*,?\s*(\d{{4}}))?\b"
+        r"(?i)\b([0-9]{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?({MONTHS})\.?(?:\s*,?\s*([0-9]{{4}}))?\b"
     )
 );
-re!(ISO_DATE, r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b");
-re!(SLASH_DATE, r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b");
+re!(ISO_DATE, r"\b([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})\b");
+re!(SLASH_DATE, r"\b([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})\b");
 re!(RELATIVE_DAY, r"(?i)\b(today|tomorrow)\b");
 re!(BARE_TOMORROW, r"(?i)^(.*\S)\s+tomorrow$");
-re!(ENDS_WITH_TIME, r"\d(?::\d{2})?\s*([AaPp][Mm])?$");
+re!(ENDS_WITH_TIME, r"[0-9](?::[0-9]{2})?\s*([AaPp][Mm])?$");
 re!(
     TRAILING_DAY,
     &format!(r"(?i)^(.*?\S)\s+(?:on\s+)?((?:next\s+|this\s+)?(?:today|tomorrow|{DAY_WORDS}))$")
 );
 re!(TRAILING_ON_DATE, r"(?i)^(.*\S)\s+on\s+(.+)$");
-re!(AT_TIME, r"^(.*)\bat\s+([\d:\sAaPpMm]+)$");
+re!(AT_TIME, r"^(.*)\bat\s+([0-9:\sAaPpMm]+)$");
 
 fn caps<'a>(re: &Regex, s: &'a str) -> Option<fancy_regex::Captures<'a, str>> {
     re.captures(s).ok().flatten()
@@ -175,20 +175,22 @@ fn extract_date(s: &mut String, today: NaiveDate) -> Option<ExtractedDate> {
 
 // ---- integer math for durations: + - * / and parentheses, whole numbers only ----
 
-struct IntExpr<'a> {
+const MAX_NESTING: u32 = 100;
+
+struct IntExpr {
     chars: Vec<char>,
     pos: usize,
     error: Option<String>,
-    _src: &'a str,
+    depth: u32,
 }
 
-impl<'a> IntExpr<'a> {
-    fn new(src: &'a str) -> Self {
+impl IntExpr {
+    fn new(src: &str) -> Self {
         Self {
             chars: src.chars().collect(),
             pos: 0,
             error: None,
-            _src: src,
+            depth: 0,
         }
     }
 
@@ -271,15 +273,30 @@ impl<'a> IntExpr<'a> {
                 }
             } else if rhs == 0 {
                 return self.fail("Division by zero in math expression.");
-            } else if value % rhs != 0 {
-                return self.fail("Math expression must resolve to a whole number.");
             } else {
-                value / rhs
+                // checked_*: i64::MIN / -1 would panic.
+                match (value.checked_rem(rhs), value.checked_div(rhs)) {
+                    (Some(0), Some(v)) => v,
+                    (Some(_), _) => {
+                        return self.fail("Math expression must resolve to a whole number.");
+                    }
+                    _ => return self.fail("Math expression overflowed."),
+                }
             };
         }
     }
 
     fn factor(&mut self) -> Option<i64> {
+        if self.depth >= MAX_NESTING {
+            return self.fail("Math expression is nested too deeply.");
+        }
+        self.depth += 1;
+        let v = self.factor_inner();
+        self.depth -= 1;
+        v
+    }
+
+    fn factor_inner(&mut self) -> Option<i64> {
         self.skip_spaces();
         if self.at_end() {
             return self.fail("Math expression ended unexpectedly.");
@@ -351,8 +368,13 @@ pub fn parse_duration_to_seconds(s: &str) -> Result<i32, String> {
     let x = s.to_lowercase().replace(',', " ").replace("and", " ");
     let mut total: i64 = 0;
     let mut matches = 0;
+    let mut leftover = String::new();
+    let mut end = 0;
     for c in DURATION_TOKEN.captures_iter(x.as_str()) {
         let c = c.map_err(|e| e.to_string())?;
+        let whole = c.get(0).unwrap();
+        leftover += &x[end..whole.start()];
+        end = whole.end();
         let n = parse_duration_amount(group(&c, 1))?;
         let delta = n
             .checked_mul(unit_seconds(group(&c, 2)))
@@ -360,7 +382,9 @@ pub fn parse_duration_to_seconds(s: &str) -> Result<i32, String> {
         total = total.checked_add(delta).ok_or("Duration is too large.")?;
         matches += 1;
     }
-    if matches == 0 {
+    leftover += &x[end..];
+    // Stray digits or '.' (1.5h, "1h 30") mean part of the input was ignored; refuse rather than guess.
+    if matches == 0 || leftover.contains(|ch: char| ch.is_ascii_digit() || ch == '.') {
         return Err(
             "Couldn't parse duration. Examples: \"45m\", \"5h23m\", \"2 days 3 hours\"".into(),
         );
@@ -414,14 +438,18 @@ pub fn parse_date_time(s: &str, now: DateTime<Local>) -> Result<(NaiveDate, Naiv
     let time = parse_time_of_day(rest)?;
 
     let year_given = d.year != 0;
-    let mut date =
-        NaiveDate::from_ymd_opt(if year_given { d.year } else { now.year() }, d.month, d.day)
-            .ok_or("That date doesn't exist.")?;
+    let mut date = if year_given {
+        NaiveDate::from_ymd_opt(d.year, d.month, d.day)
+    } else {
+        // First future year the date exists in (Feb 29 can be up to 8 years away).
+        (0..=8).find_map(|i| {
+            NaiveDate::from_ymd_opt(now.year() + i, d.month, d.day)
+                .filter(|date| local(*date, time) > now)
+        })
+    }
+    .ok_or("That date doesn't exist.")?;
     if d.roll_days_if_past > 0 && local(date, time) <= now {
         date += Duration::days(d.roll_days_if_past);
-    }
-    if !year_given && local(date, time) <= now {
-        date = date.checked_add_months(Months::new(12)).unwrap_or(date);
     }
     if local(date, time) <= now {
         return Err("That date and time is already in the past.".into());
@@ -453,10 +481,6 @@ pub fn parse_repeat_interval_to_seconds(s: &str) -> Result<i32, String> {
 
 fn extract_date_probe(s: &str, today: NaiveDate) -> bool {
     extract_date(&mut s.to_string(), today).is_some()
-}
-
-pub fn parse_input(input: &str) -> Result<ParseResult, String> {
-    parse_input_at(input, Local::now())
 }
 
 pub fn parse_input_at(input: &str, now: DateTime<Local>) -> Result<ParseResult, String> {

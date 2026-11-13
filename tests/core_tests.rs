@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 //! Port of the 1.x `core_tests.cpp`, plus the 2.0 compatibility checks.
 
-use chrono::{Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone};
 use remindme::model::{ChecklistItem, CompletedReminder, Reminder, ScheduleType};
-use remindme::parser::{self, parse_input};
+use remindme::parser::{self, ParseResult};
 use remindme::schedule;
-use remindme::store::ReminderStore;
+use remindme::store::{MAX_COMPLETED_ITEMS, ReminderStore};
 use remindme::update::{self, Platform};
 use remindme::weekday::{self, weekday_bit as bit};
 use serde_json::json;
@@ -18,8 +18,17 @@ fn d(y: i32, m: u32, day: u32) -> Option<NaiveDate> {
     NaiveDate::from_ymd_opt(y, m, day)
 }
 
+/// A Wednesday morning; every parse in these tests runs against it, never the wall clock.
+fn fixed_now() -> DateTime<Local> {
+    Local.with_ymd_and_hms(2030, 6, 12, 10, 0, 0).unwrap()
+}
+
+fn parse(input: &str) -> Result<ParseResult, String> {
+    parser::parse_input_at(input, fixed_now())
+}
+
 fn mask_of(input: &str) -> i32 {
-    let r = parse_input(input).unwrap_or_else(|e| panic!("{input}: {e}"));
+    let r = parse(input).unwrap_or_else(|e| panic!("{input}: {e}"));
     assert!(
         !r.is_relative && r.has_repeat_directive && r.repeat_interval_seconds == 0,
         "{input}"
@@ -29,7 +38,7 @@ fn mask_of(input: &str) -> i32 {
 
 #[test]
 fn parse_relative() {
-    let r = parse_input("Drink water in 45m").unwrap();
+    let r = parse("Drink water in 45m").unwrap();
     assert!(r.is_relative);
     assert_eq!(
         (r.title.as_str(), r.duration_seconds),
@@ -39,36 +48,36 @@ fn parse_relative() {
 
 #[test]
 fn parse_at_time() {
-    let r = parse_input("Stand up at 7:00AM").unwrap();
+    let r = parse("Stand up at 7:00AM").unwrap();
     assert!(!r.is_relative);
     assert_eq!((r.title.as_str(), r.time_of_day), ("Stand up", t(7, 0)));
 }
 
 #[test]
 fn parse_date_time() {
-    let a = parse_input("reinforce on october 24, 2099 6:30AM").unwrap();
+    let a = parse("reinforce on october 24, 2099 6:30AM").unwrap();
     assert_eq!(
         (a.title.as_str(), a.date, a.time_of_day, a.is_relative),
         ("reinforce", d(2099, 10, 24), t(6, 30), false)
     );
 
-    let b = parse_input("Pay rent at 6:30PM on 2099-01-05").unwrap();
+    let b = parse("Pay rent at 6:30PM on 2099-01-05").unwrap();
     assert_eq!(
         (b.title.as_str(), b.date, b.time_of_day),
         ("Pay rent", d(2099, 1, 5), t(18, 30))
     );
 
-    let c = parse_input("Party at 5 Dec 2099 8pm").unwrap();
+    let c = parse("Party at 5 Dec 2099 8pm").unwrap();
     assert_eq!((c.date, c.time_of_day), (d(2099, 12, 5), t(20, 0)));
 
-    let tomorrow = Some(Local::now().date_naive() + Duration::days(1));
+    let tomorrow = Some(fixed_now().date_naive() + Duration::days(1));
     for (input, title, time) in [
         ("Water plants tomorrow", "Water plants", t(9, 0)),
         ("Call mom tomorrow at 7pm", "Call mom", t(19, 0)),
         ("Call mom at 7pm tomorrow", "Call mom", t(19, 0)),
         ("Turn on lights tomorrow", "Turn on lights", t(9, 0)),
     ] {
-        let r = parse_input(input).unwrap();
+        let r = parse(input).unwrap();
         assert_eq!(
             (r.title.as_str(), r.date, r.time_of_day),
             (title, tomorrow, time),
@@ -83,8 +92,8 @@ fn parse_date_time() {
         ("Call mom wed at 7pm", "Call mom", 3, t(19, 0)),
         ("Pay rent at 9am on next mon", "Pay rent", 1, t(9, 0)),
     ] {
-        let now = Local::now();
-        let r = parse_input(input).unwrap();
+        let now = fixed_now();
+        let r = parse(input).unwrap();
         let when = remindme::model::local(r.date.unwrap(), r.time_of_day.unwrap());
         assert_eq!(r.title, title, "{input}");
         assert_eq!(
@@ -96,10 +105,10 @@ fn parse_date_time() {
         assert!(when > now && when <= now + Duration::days(7), "{input}");
     }
 
-    let l = parse_input("Pay rent on Sunday, Oct 26 2099 9am").unwrap();
+    let l = parse("Pay rent on Sunday, Oct 26 2099 9am").unwrap();
     assert_eq!((l.date, l.time_of_day), (d(2099, 10, 26), t(9, 0)));
 
-    let m = parse_input("Turn on lights at 7pm").unwrap();
+    let m = parse("Turn on lights at 7pm").unwrap();
     assert_eq!((m.title.as_str(), m.date), ("Turn on lights", None));
 
     for bad in [
@@ -108,30 +117,23 @@ fn parse_date_time() {
         "x on october 24, 2099",
         "x on october 24, 2099 6:30AM every day",
     ] {
-        assert!(parse_input(bad).is_err(), "{bad}");
+        assert!(parse(bad).is_err(), "{bad}");
     }
 }
 
 #[test]
 fn parse_time_am_pm_boundaries() {
     assert_eq!(
-        parse_input("Midnight task at 12:00AM").unwrap().time_of_day,
+        parse("Midnight task at 12:00AM").unwrap().time_of_day,
         t(0, 0)
     );
-    assert_eq!(
-        parse_input("Noon task at 12:00PM").unwrap().time_of_day,
-        t(12, 0)
-    );
-    assert!(
-        !parse_input("Invalid task at 00:30PM")
-            .unwrap_err()
-            .is_empty()
-    );
+    assert_eq!(parse("Noon task at 12:00PM").unwrap().time_of_day, t(12, 0));
+    assert!(!parse("Invalid task at 00:30PM").unwrap_err().is_empty());
 }
 
 #[test]
 fn parse_repeat_interval() {
-    let r = parse_input("Hydrate in 10m every 2 hours").unwrap();
+    let r = parse("Hydrate in 10m every 2 hours").unwrap();
     assert!(r.has_repeat_directive);
     assert_eq!(r.repeat_interval_seconds, 2 * 3600);
 }
@@ -176,13 +178,13 @@ fn parse_repeat_weekdays() {
 
 #[test]
 fn reject_bad_weekday_repeats() {
-    assert!(parse_input("Reminder in 30m every Saturday").is_err());
-    assert!(parse_input("Reminder at 7:00AM every Mon-").is_err());
+    assert!(parse("Reminder in 30m every Saturday").is_err());
+    assert!(parse("Reminder at 7:00AM every Mon-").is_err());
 }
 
 #[test]
 fn parse_compact_and_math_durations() {
-    let r = parse_input("butterfly unlock in 3d19h17m").unwrap();
+    let r = parse("butterfly unlock in 3d19h17m").unwrap();
     assert_eq!(
         (r.title.as_str(), r.duration_seconds),
         ("butterfly unlock", ((3 * 24 + 19) * 60 + 17) * 60)
@@ -192,13 +194,13 @@ fn parse_compact_and_math_durations() {
         Ok(30 * 60)
     );
     assert_eq!(
-        parse_input("Drink water in (3*10) minutes")
+        parse("Drink water in (3*10) minutes")
             .unwrap()
             .duration_seconds,
         30 * 60
     );
     assert_eq!(
-        parse_input("Hydrate in 10m every (2+1) hours")
+        parse("Hydrate in 10m every (2+1) hours")
             .unwrap()
             .repeat_interval_seconds,
         3 * 3600
@@ -756,4 +758,47 @@ fn greetings_file_round_trip() {
     let shipped =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/greetings.txt")).unwrap();
     assert!(greetings::parse(&shipped).iter().all(|p| p.len() == 10));
+}
+
+#[test]
+fn reschedule_after_acknowledge_at_time() {
+    let now = Local.with_ymd_and_hms(2030, 6, 12, 7, 0, 0).unwrap();
+    // Daily at-time: strictly after `now`, so due-exactly-now moves to tomorrow.
+    let mut daily = sample("d", "Stand up", true, ScheduleType::AtTimeOfDay, 0);
+    daily.time_of_day = t(7, 0);
+    daily.next = now;
+    schedule::reschedule_after_acknowledge(&mut daily, now);
+    assert_eq!(
+        daily.next,
+        Local.with_ymd_and_hms(2030, 6, 13, 7, 0, 0).unwrap()
+    );
+
+    // Weekday mask: Friday 10:00 -> next selected day is Monday.
+    let friday = Local.with_ymd_and_hms(2030, 6, 14, 10, 0, 0).unwrap();
+    let mut weekdays = sample("w", "Standup", true, ScheduleType::AtTimeOfDay, 0);
+    weekdays.time_of_day = t(9, 0);
+    weekdays.repeat_weekdays_mask = weekday::WEEKDAYS_MASK;
+    weekdays.next = friday - Duration::hours(1);
+    schedule::reschedule_after_acknowledge(&mut weekdays, friday);
+    assert_eq!(
+        weekdays.next,
+        Local.with_ymd_and_hms(2030, 6, 17, 9, 0, 0).unwrap()
+    );
+}
+
+#[test]
+fn append_completed_caps_history() {
+    let now = fixed_now();
+    let mut history = Vec::new();
+    for i in 0..MAX_COMPLETED_ITEMS + 5 {
+        let mut r = sample("id", &format!("Task {i}"), false, ScheduleType::Relative, 0);
+        r.interval_seconds = 60;
+        schedule::append_completed(&mut history, &r, now);
+    }
+    assert_eq!(history.len(), MAX_COMPLETED_ITEMS);
+    assert_eq!(history.first().unwrap().title, "Task 5");
+    assert_eq!(
+        history.last().unwrap().title,
+        format!("Task {}", MAX_COMPLETED_ITEMS + 4)
+    );
 }

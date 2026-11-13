@@ -51,7 +51,7 @@ pub fn format_interval_text(seconds: i64) -> String {
 
 /// "7:05 AM"
 pub fn hm(dt: &DateTime<Local>) -> String {
-    dt.format("%-I:%M %p").to_string()
+    hm_time(dt.time())
 }
 
 pub fn hm_time(t: chrono::NaiveTime) -> String {
