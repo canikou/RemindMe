@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: ["**"]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -26,17 +27,24 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Tag matches Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          [ "${GITHUB_REF_NAME#v}" = "$v" ] || { echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $v" >&2; exit 1; }
+
       - name: Format check
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test --locked
 
       - name: Build release
-        run: cargo build --release
+        run: cargo build --release --locked
 
       - name: Package portable release
         shell: pwsh
@@ -89,16 +97,23 @@ jobs:
         with:
           components: clippy
 
+      - name: Tag matches Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          [ "${GITHUB_REF_NAME#v}" = "$v" ] || { echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $v" >&2; exit 1; }
+
       - uses: Swatinem/rust-cache@v2
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test --locked
 
       - name: Build release
-        run: cargo build --release
+        run: cargo build --release --locked
 
       - name: Package AppImage
         run: ./scripts/package-appimage.sh

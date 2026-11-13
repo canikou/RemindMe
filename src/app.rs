@@ -15,10 +15,11 @@ use iced::{
     Alignment, Color, Element, Font, Length, Padding, Size, Subscription, Task, event, keyboard,
     time, window,
 };
+use remindme::edit::{self, EditForm};
 use remindme::greetings::{self, Pools};
 use remindme::model::{ChecklistItem, Reminder, ScheduleType, new_id};
 use remindme::parser;
-use remindme::schedule::{self as sched, SHORT_REPEAT_WARNING_SECONDS, SNOOZE_SECONDS};
+use remindme::schedule::{self as sched, SHORT_REPEAT_WARNING_SECONDS};
 use remindme::store::{ReminderStore, documents_app_dir};
 use remindme::time_format::{self as tf, hm};
 use remindme::update::UpdateAsset;
@@ -36,6 +37,8 @@ const COL_REPEATS: f32 = 168.0;
 const COL_DUE: f32 = 104.0;
 const COL_ACTIONS: f32 = 232.0;
 const INPUT_ID: &str = "reminder-input";
+/// The popup grabs focus when it appears; input aimed at the app the user was in is ignored this long.
+const POPUP_INPUT_GUARD: Duration = Duration::from_millis(1500);
 
 pub struct App {
     store: ReminderStore,
@@ -66,16 +69,6 @@ struct Popup {
     reminder_id: String,
     title: String,
     due: DateTime<Local>,
-}
-
-struct EditForm {
-    id: String,
-    title: String,
-    relative: bool,
-    next_in: String,
-    at: String,
-    repeating: bool,
-    repeat_every: String,
 }
 
 struct SubtaskForm {
@@ -114,7 +107,6 @@ enum Modal {
 #[derive(Clone, Debug)]
 pub enum Message {
     Tick,
-    Poll,
     Frame,
     ThemeChanged(iced::theme::Mode),
     CloseRequested(window::Id),
@@ -401,19 +393,7 @@ impl App {
         let Some(p) = self.popup.take() else {
             return Task::none();
         };
-        let now = Local::now();
-        if let Some(i) = self.store.items.iter().position(|r| r.id == p.reminder_id) {
-            if !done {
-                self.store.items[i].next = now + chrono::Duration::seconds(SNOOZE_SECONDS);
-            } else if !self.store.items[i].repeating {
-                let r = self.store.items.remove(i);
-                sched::append_completed(&mut self.store.completed, &r, now);
-            } else {
-                let r = &mut self.store.items[i];
-                r.reset_checklist();
-                sched::reschedule_after_acknowledge(r, now);
-            }
-        }
+        edit::finish_reminder(&mut self.store, &p.reminder_id, done, Local::now());
         self.queue.retain(|q| *q != p.reminder_id);
         Task::batch([window::close(p.window), self.commit()])
     }
@@ -422,7 +402,7 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         if std::env::var_os("REMINDME_DEBUG").is_some()
-            && !matches!(message, Message::Tick | Message::Poll | Message::Frame)
+            && !matches!(message, Message::Tick | Message::Frame)
         {
             eprintln!("[debug] {message:?}");
         }
@@ -432,10 +412,8 @@ impl App {
                 self.refresh_greeting();
                 self.trigger_due();
                 self.refresh_flap();
-                return self.resize_overlay();
-            }
-            Message::Poll => {
-                let mut tasks = vec![self.show_next_popup()];
+                // Tray and second-launch requests are only picked up here, so at most 1s late.
+                let mut tasks = vec![self.show_next_popup(), self.resize_overlay()];
                 for e in platform::drain() {
                     tasks.push(match e {
                         External::ShowMain => self.open_main(),
@@ -454,7 +432,11 @@ impl App {
             Message::ThemeChanged(_) => {}
             Message::CloseRequested(id) => {
                 if self.popup.as_ref().is_some_and(|p| p.window == id) {
-                    return self.finish_popup(true); // closing with X counts as done
+                    // Closing with X counts as done, but not while the popup is still stealing focus.
+                    if !self.popup_takes_keys(id) {
+                        return Task::none();
+                    }
+                    return self.finish_popup(true);
                 }
                 if Some(id) == self.overlay {
                     return self.set_overlay(false);
@@ -540,7 +522,7 @@ impl App {
             Message::CloseModal => self.modal = None,
             Message::Edit(id) => {
                 if let Some(r) = self.find(&id) {
-                    let form = edit_form(r, Local::now());
+                    let form = edit::edit_form(r, Local::now());
                     return self.show_modal(Modal::Edit(form, None));
                 }
             }
@@ -569,9 +551,12 @@ impl App {
                 }
             }
             Message::ShortRepeatConfirmed => {
-                if let Some(Modal::ConfirmShortRepeat { reminder, .. }) = self.modal.take() {
-                    self.upsert(reminder);
-                    return self.commit();
+                if let Some(Modal::ConfirmShortRepeat { reminder, source }) = self.modal.take() {
+                    if source == "adding" {
+                        self.input.clear();
+                    }
+                    let close = self.upsert(reminder);
+                    return Task::batch([close, self.commit()]);
                 }
             }
             Message::Subtasks(id) => {
@@ -718,7 +703,7 @@ impl App {
     fn popup_takes_keys(&self, id: window::Id) -> bool {
         self.popup
             .as_ref()
-            .is_some_and(|p| p.window == id && p.opened.elapsed() >= Duration::from_millis(1500))
+            .is_some_and(|p| p.window == id && p.opened.elapsed() >= POPUP_INPUT_GUARD)
     }
 
     fn with_edit(&mut self, f: impl FnOnce(&mut EditForm)) {
@@ -734,12 +719,15 @@ impl App {
         }
     }
 
-    fn upsert(&mut self, reminder: Reminder) {
+    /// Closes the reminder's popup, if shown: it describes the old schedule and Done/Snooze would act on the edit.
+    fn upsert(&mut self, reminder: Reminder) -> Task<Message> {
         self.queue.retain(|q| *q != reminder.id);
+        let stale = self.popup.take_if(|p| p.reminder_id == reminder.id);
         match self.store.items.iter_mut().find(|r| r.id == reminder.id) {
             Some(existing) => *existing = reminder,
             None => self.store.items.push(reminder),
         }
+        stale.map_or_else(Task::none, |p| window::close(p.window))
     }
 
     /// Adds or replaces, asking first when a repeat is so short it would flood popups.
@@ -752,8 +740,11 @@ impl App {
             return self.show_modal(Modal::ConfirmShortRepeat { reminder, source });
         }
         self.modal = None;
-        self.upsert(reminder);
-        self.commit()
+        if source == "adding" {
+            self.input.clear();
+        }
+        let close = self.upsert(reminder);
+        Task::batch([close, self.commit()])
     }
 
     fn add_from_input(&mut self) -> Task<Message> {
@@ -770,7 +761,6 @@ impl App {
             Ok(parsed) => {
                 let mut r = sched::reminder_from_parse(&parsed, now);
                 r.id = new_id();
-                self.input.clear();
                 self.upsert_checked(r, "adding")
             }
         }
@@ -781,10 +771,13 @@ impl App {
             return Task::none();
         };
         let Some(original) = self.find(&form.id) else {
-            return Task::none();
+            return self.message(
+                "Reminder gone",
+                "This reminder was completed or deleted while you were editing it.",
+            );
         };
         let now = Local::now();
-        match edited_reminder(original, form, now) {
+        match edit::edited_reminder(original, form, now) {
             // Validate before closing so a typo doesn't throw away the other edits.
             Err(e) => {
                 if let Some(Modal::Edit(_, error)) = &mut self.modal {
@@ -801,7 +794,6 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         let mut subs = vec![
             time::every(Duration::from_secs(1)).map(|_| Message::Tick),
-            time::every(Duration::from_millis(250)).map(|_| Message::Poll),
             window::close_requests().map(Message::CloseRequested),
             iced::system::theme_changes().map(Message::ThemeChanged),
             event::listen_with(|e, _, id| match e {
@@ -1684,76 +1676,6 @@ fn fit_overlay_countdown(seconds: i64, column_px: f32, px: f32) -> String {
         .find(|c| fits(c))
         .unwrap_or(candidates.last().unwrap())
         .clone()
-}
-
-fn edit_form(r: &Reminder, now: DateTime<Local>) -> EditForm {
-    let next_in = (r.next - now).num_seconds().max(1);
-    let repeat = if r.interval_seconds > 0 {
-        r.interval_seconds as i64
-    } else {
-        next_in
-    };
-    let time = r.time_of_day.unwrap_or(r.next.time());
-    EditForm {
-        id: r.id.clone(),
-        title: r.title.clone(),
-        relative: r.schedule_type == ScheduleType::Relative,
-        next_in: sched::duration_to_input_text(next_in),
-        at: if r.repeating {
-            tf::hm_time(time)
-        } else {
-            format!("{} {}", r.next.format("%b %-d, %Y"), tf::hm_time(time))
-        },
-        repeating: r.repeating,
-        repeat_every: sched::duration_to_input_text(repeat),
-    }
-}
-
-/// Applies the edit dialog to a copy of the reminder, or explains what's wrong.
-fn edited_reminder(
-    original: &Reminder,
-    f: &EditForm,
-    now: DateTime<Local>,
-) -> Result<Reminder, String> {
-    let mut r = original.clone();
-    r.title = f.title.trim().to_string();
-    if r.title.is_empty() {
-        return Err("Reminder title cannot be empty.".into());
-    }
-    r.repeating = f.repeating;
-    if f.relative {
-        let delay = parser::parse_duration_to_seconds(f.next_in.trim())?;
-        r.schedule_type = ScheduleType::Relative;
-        r.next = now + chrono::Duration::seconds(delay as i64);
-        r.repeat_weekdays_mask = 0;
-        r.interval_seconds = if !f.repeating || f.repeat_every.trim().is_empty() {
-            delay
-        } else {
-            parser::parse_duration_to_seconds(f.repeat_every.trim())?
-        };
-    } else {
-        r.schedule_type = ScheduleType::AtTimeOfDay;
-        r.interval_seconds = 0;
-        if f.repeating {
-            let time = parser::parse_time_of_day(f.at.trim())?;
-            r.time_of_day = Some(time);
-            r.next = sched::next_at_time_from(time, now, r.repeat_weekdays_mask);
-        } else {
-            r.repeat_weekdays_mask = 0;
-            // A full date, or just a time meaning its next occurrence.
-            let (next, time) = match parser::parse_date_time(f.at.trim(), now) {
-                Ok((date, time)) => (remindme::model::local(date, time), time),
-                Err(date_err) => match parser::parse_time_of_day(f.at.trim()) {
-                    Ok(time) => (sched::next_at_time_from(time, now, 0), time),
-                    Err(_) => return Err(date_err),
-                },
-            };
-            r.time_of_day = Some(time);
-            r.next = next;
-        }
-    }
-    r.enforce_checklist_constraints();
-    Ok(r)
 }
 
 /// X11 window managers ignore the level set at creation; set it again once the window is mapped.

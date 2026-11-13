@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! RemindMe core: parsing, scheduling, storage and update rules. No UI code lives here.
 
+pub mod edit;
 pub mod greetings;
 pub mod model;
 pub mod parser;
