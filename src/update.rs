@@ -46,6 +46,16 @@ pub fn is_remote_version_newer(remote: &str, current: &str) -> bool {
     }
 }
 
+/// Ok(true) when `remote` is newer; Err when either tag isn't `major.minor.patch`,
+/// so an odd tag (`v2.1`, `2.1.0-rc1`) is reported instead of passing for "up to date".
+pub fn compare_remote_tag(remote: &str, current: &str) -> Result<bool, String> {
+    let parse = |t: &str| {
+        parse_version_triplet(t)
+            .ok_or_else(|| format!("Unrecognized version tag \"{}\".", t.trim()))
+    };
+    Ok(parse(remote)? > parse(current)?)
+}
+
 pub fn is_installer_asset_name(name: &str, platform: Platform) -> bool {
     let n = name.to_lowercase();
     match platform {
@@ -105,7 +115,7 @@ pub fn pick_best_release_asset(assets: &[Value], platform: Platform) -> Option<U
             .and_then(Value::as_str)
             .unwrap_or_default()
             .trim();
-        if name.is_empty() || !(url.starts_with("https://") || url.starts_with("http://")) {
+        if name.is_empty() || !url.starts_with("https://") {
             continue;
         }
         let priority = update_asset_priority(name, platform);
@@ -122,6 +132,10 @@ pub fn pick_best_release_asset(assets: &[Value], platform: Platform) -> Option<U
             .filter(|p| p.eq_ignore_ascii_case("sha256:"))
             .map(|_| digest[7..].trim().to_lowercase())
             .unwrap_or_default();
+        // No verifiable checksum, no update: never offer an unverifiable download.
+        if sha256_hex.len() != 64 || !sha256_hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            continue;
+        }
         best = Some((
             priority,
             UpdateAsset {
