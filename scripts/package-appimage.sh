@@ -11,10 +11,15 @@ binary=${1:-target/release/RemindMe}
 
 tools=.tools
 mkdir -p "$tools" dist
-linuxdeploy="$tools/linuxdeploy-x86_64.AppImage"
+# Pinned release, verified by hash: bump both together.
+linuxdeploy_tag=1-alpha-20251107-1
+linuxdeploy_sha256=c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+linuxdeploy="$tools/linuxdeploy-$linuxdeploy_tag-x86_64.AppImage"
 if [[ ! -x "$linuxdeploy" ]]; then
-    curl -fsSL -o "$linuxdeploy" https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-    chmod +x "$linuxdeploy"
+    curl -fsSL -o "$linuxdeploy.part" "https://github.com/linuxdeploy/linuxdeploy/releases/download/$linuxdeploy_tag/linuxdeploy-x86_64.AppImage"
+    echo "$linuxdeploy_sha256  $linuxdeploy.part" | sha256sum -c - || { rm -f "$linuxdeploy.part"; exit 1; }
+    chmod +x "$linuxdeploy.part"
+    mv "$linuxdeploy.part" "$linuxdeploy"
 fi
 
 appdir=$(mktemp -d)/AppDir
