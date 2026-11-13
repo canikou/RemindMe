@@ -810,3 +810,23 @@ fn append_completed_caps_history() {
         format!("Task {}", MAX_COMPLETED_ITEMS + 4)
     );
 }
+
+#[test]
+fn ambiguous_local_time_takes_the_earlier_instant() {
+    use chrono::{FixedOffset, LocalResult};
+    let edt = FixedOffset::west_opt(4 * 3600).unwrap();
+    let est = FixedOffset::west_opt(5 * 3600).unwrap();
+    let naive = NaiveDate::from_ymd_opt(2026, 11, 1)
+        .unwrap()
+        .and_hms_opt(1, 30, 0)
+        .unwrap();
+    let first = edt.from_local_datetime(&naive).unwrap();
+    let second = est.from_local_datetime(&naive).unwrap();
+    // chrono on Unix lists the later instant first; either order must give the earlier one.
+    for r in [
+        LocalResult::Ambiguous(second, first),
+        LocalResult::Ambiguous(first, second),
+    ] {
+        assert_eq!(remindme::model::earlier(r), Some(first));
+    }
+}

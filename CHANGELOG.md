@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- Linux: a reminder for a time that happens twice when clocks go back (like 1:30 AM on the fall-back night) fires at the first one, not an hour later.
+
 ## 2.0.2 - 2026-11-13
 
 ### Fixes
