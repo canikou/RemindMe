@@ -1,7 +1,7 @@
 # RemindMe
 
 RemindMe is a desktop reminders app for Windows and Linux, written in Rust with [iced](https://iced.rs).
-Current version: `v2.0.1`.
+Current version: `v2.0.2`.
 
 ## User Experience
 

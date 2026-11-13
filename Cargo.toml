@@ -1,6 +1,6 @@
 [package]
 name = "remindme"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2024"
 license = "MIT"
 description = "Natural-language desktop reminders with a tray, overlay and due popups"

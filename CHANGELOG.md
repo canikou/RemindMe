@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.0.2 - 2026-11-13
+
+### Fixes
+
+- A reminders file that can't be read is set aside as `reminders.json.corrupt-<time>` instead of being overwritten with an empty list; reminders that can't be loaded are backed up first.
+- Saving flushes to disk before replacing the file, and save errors say what went wrong.
+- Moving 1.x data is safe against a crash mid-copy, and a failed move no longer hides the old reminders.
+- Editing a reminder keeps its due time unless you change the schedule, and closes its popup if one is showing.
+- Closing a due popup in its first moment on screen is ignored, like Enter and Esc.
+- "Pills at 7am every 2 hours" first fires at 7am instead of two hours from now.
+- "Feb 29" with no year picks the next leap year.
+- Durations with decimals or stray numbers ("in 1.5h", "in 1h 30") and full-width digits are rejected instead of read as the wrong time.
+- Very long or overflowing math in the input no longer crashes the app.
+- Answering No to the short-repeat question keeps what you typed.
+- A second launch that can't reach a stuck running copy shows a message instead of doing nothing.
+- An update check that fails offline is retried at the next start instead of a day later.
+
+### Security
+
+- Updates are only installed from `https` downloads with a matching SHA-256 checksum.
+- Imported share strings can't set repeat intervals below 30 seconds or overflow numbers.
+
+### Changes
+
+- Tray menu clicks respond immediately, and the app no longer wakes four times a second while idle.
+- A declined update's installer is deleted.
+
 ## 2.0.1 - 2026-11-04
 
 ### Fixes
