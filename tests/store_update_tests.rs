@@ -94,6 +94,63 @@ fn dropped_entries_are_backed_up_once_loaded() {
 }
 
 #[test]
+fn newer_version_file_is_backed_up_once_loaded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reminders.json");
+    // The bad entry is dropped too: still only one backup.
+    let text = json!({"version": 99, "completed": [],
+        "reminders": [reminder_json("ok", "Keep me"), reminder_json("bad", "")]})
+    .to_string();
+    std::fs::write(&path, &text).unwrap();
+    ReminderStore::with_paths(&path, None).load().unwrap();
+    let backups = files_with_prefix(dir.path(), "reminders.json.bak-");
+    assert_eq!(backups.len(), 1);
+    assert_eq!(std::fs::read_to_string(&backups[0]).unwrap(), text);
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reminders.json");
+    let text =
+        json!({"version": 4, "completed": [], "reminders": [reminder_json("ok", "Keep me")]});
+    std::fs::write(&path, text.to_string()).unwrap();
+    ReminderStore::with_paths(&path, None).load().unwrap();
+    assert!(files_with_prefix(dir.path(), "reminders.json.bak-").is_empty());
+}
+
+#[test]
+fn snoozed_from_round_trips_and_bad_values_are_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reminders.json");
+    let anchor = Local::now() - chrono::Duration::minutes(5);
+    let mut store = ReminderStore::with_paths(&path, None);
+    store
+        .import_share_string(&json!({"reminders": [reminder_json("", "A")]}).to_string())
+        .unwrap();
+    store.save().unwrap();
+    assert!(
+        !std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("snoozed_from_epoch")
+    );
+    store.items[0].snoozed_from = Some(anchor);
+    store.save().unwrap();
+
+    let mut loaded = ReminderStore::with_paths(&path, None);
+    loaded.load().unwrap();
+    assert_eq!(
+        loaded.items[0].snoozed_from.unwrap().timestamp(),
+        anchor.timestamp()
+    );
+
+    // Garbage in the field is None, not a dropped entry.
+    let mut bad = reminder_json("x", "B");
+    bad["snoozed_from_epoch"] = json!("junk");
+    std::fs::write(&path, json!({"version": 4, "reminders": [bad]}).to_string()).unwrap();
+    loaded.load().unwrap();
+    assert_eq!(loaded.items[0].snoozed_from, None);
+    assert!(files_with_prefix(dir.path(), "reminders.json.bak-").is_empty());
+}
+
+#[test]
 fn clean_file_makes_no_backup() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("reminders.json");

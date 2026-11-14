@@ -9,6 +9,9 @@
 - A reminders file or greetings.txt saved by Notepad (UTF-8 with BOM) loads instead of being set aside as corrupted or losing its first section.
 - A reminders file whose list was damaged (not a list) is backed up before the next save replaces it.
 - Dismissing the install prompt with Esc or by closing the window deletes the downloaded installer, like Cancel does.
+- Snoozing a repeating "every ..." reminder no longer pushes its later due times back; Done still schedules from the original time.
+- If saving fails while a dialog is open (an Edit form or Import text), the error waits until you close the dialog instead of replacing it.
+- A reminders file saved by a newer version of the app is backed up as `reminders.json.bak-<time>` before this version overwrites it.
 - "AT" in capitals works like "at" ("Pay rent AT 9am on Oct 26").
 
 ## 2.0.2 - 2026-11-13

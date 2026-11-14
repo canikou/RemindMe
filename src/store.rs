@@ -107,7 +107,7 @@ fn reminder_to_json(r: &Reminder) -> Value {
         .filter(|i| !i.text.trim().is_empty())
         .map(|i| json!({ "text": i.text.trim(), "checked": i.checked }))
         .collect();
-    json!({
+    let mut v = json!({
         "id": r.id,
         "title": r.title,
         "next_epoch": r.next.timestamp(),
@@ -117,7 +117,11 @@ fn reminder_to_json(r: &Reminder) -> Value {
         "time_of_day": time_str(r.time_of_day),
         "repeat_weekdays_mask": normalize_mask(r.repeat_weekdays_mask),
         "checklist_items": checklist,
-    })
+    });
+    if let Some(t) = r.snoozed_from {
+        v["snoozed_from_epoch"] = t.timestamp().into();
+    }
+    v
 }
 
 fn reminder_from_json(v: &Value, require_id: bool) -> Option<Reminder> {
@@ -149,6 +153,7 @@ fn reminder_from_json(v: &Value, require_id: bool) -> Option<Reminder> {
         repeat_weekdays_mask: normalize_mask(int_of(o, "repeat_weekdays_mask", 0)),
         repeating: o.get("repeating").and_then(Value::as_bool).unwrap_or(false),
         checklist,
+        snoozed_from: epoch_of(o, "snoozed_from_epoch"),
     };
     r.enforce_checklist_constraints();
     if (require_id && r.id.is_empty()) || r.title.is_empty() {
@@ -299,13 +304,22 @@ impl ReminderStore {
         let excess = self.completed.len().saturating_sub(MAX_COMPLETED_ITEMS);
         self.completed.drain(..excess);
         self.sort_soonest_first();
-        if dropped > 0 {
-            // The next save drops these entries for good; keep the original.
+        let newer = root
+            .get("version")
+            .and_then(number_of)
+            .is_some_and(|v| v > STORAGE_VERSION);
+        if dropped > 0 || newer {
+            // The next save drops these entries (or fields a newer version added) for good; keep the original.
             let backup = side_path(&read_path, "bak");
             if let Err(e) = fs::copy(&read_path, &backup) {
                 self.save_blocked = true;
+                let what = if newer {
+                    "The reminders file is from a newer version of RemindMe".to_string()
+                } else {
+                    format!("{dropped} unreadable entries were skipped")
+                };
                 return Err(format!(
-                    "{dropped} unreadable entries were skipped and could not be backed up ({e}), so changes will not be saved."
+                    "{what} and could not be backed up ({e}), so changes will not be saved."
                 ));
             }
         }
@@ -382,6 +396,7 @@ impl ReminderStore {
         for v in arr {
             if let Some(mut r) = reminder_from_json(v, false) {
                 r.id = new_id();
+                r.snoozed_from = None;
                 // Imports skip the app's short-repeat confirmation, so floor the interval here.
                 if r.repeating
                     && r.schedule_type == ScheduleType::Relative

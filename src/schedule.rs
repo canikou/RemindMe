@@ -81,8 +81,12 @@ pub fn reminder_from_parse(p: &ParseResult, now: DateTime<Local>) -> Reminder {
 
 /// After Done on a repeating reminder: move to the next period strictly after `now`.
 pub fn reschedule_after_acknowledge(r: &mut Reminder, now: DateTime<Local>) {
+    let anchor = r.snoozed_from.take();
     if r.schedule_type == ScheduleType::Relative {
         let step = step(r.interval_seconds) as i64;
+        if let Some(a) = anchor {
+            r.next = a;
+        }
         if r.next <= now {
             // Jump whole periods at once instead of looping after a long sleep.
             let periods = (now - r.next).num_seconds() / step + 1;

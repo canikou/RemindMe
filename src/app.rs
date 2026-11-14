@@ -60,6 +60,8 @@ pub struct App {
     modal: Option<Modal>,
     has_tray: bool,
     save_error_shown: bool,
+    /// A save error that arrived while a dialog was open; shown once it closes.
+    pending_save_error: Option<String>,
     update_busy: bool,
 }
 
@@ -200,6 +202,7 @@ impl App {
             }),
             has_tray,
             save_error_shown: false,
+            pending_save_error: None,
             update_busy: false,
         };
         app.refresh_greeting();
@@ -294,15 +297,28 @@ impl App {
 
     fn save(&mut self) {
         match self.store.save() {
-            Ok(()) => self.save_error_shown = false,
+            Ok(()) => {
+                self.save_error_shown = false;
+                self.pending_save_error = None;
+            }
             Err(body) if !self.save_error_shown => {
                 self.save_error_shown = true;
-                self.modal = Some(Modal::Message {
-                    title: "Save error".into(),
-                    body,
-                });
+                self.pending_save_error = Some(body);
+                self.show_pending_save_error();
             }
             Err(_) => {}
+        }
+    }
+
+    /// Shows a deferred save error once no dialog is open, so it never replaces one the user is using.
+    fn show_pending_save_error(&mut self) {
+        if self.modal.is_none()
+            && let Some(body) = self.pending_save_error.take()
+        {
+            self.modal = Some(Modal::Message {
+                title: "Save error".into(),
+                body,
+            });
         }
     }
 
@@ -413,6 +429,13 @@ impl App {
     // ---------- update ----------
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        let task = self.handle(message);
+        // Every way a dialog closes (Esc, buttons, taking the modal) ends up here.
+        self.show_pending_save_error();
+        task
+    }
+
+    fn handle(&mut self, message: Message) -> Task<Message> {
         if std::env::var_os("REMINDME_DEBUG").is_some()
             && !matches!(message, Message::Tick | Message::Frame)
         {

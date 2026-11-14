@@ -29,6 +29,8 @@ pub struct Reminder {
     pub repeat_weekdays_mask: i32,
     pub repeating: bool,
     pub checklist: Vec<ChecklistItem>,
+    /// Original due time while snoozed, so Done still schedules from it; cleared on Done or a schedule edit.
+    pub snoozed_from: Option<DateTime<Local>>,
 }
 
 impl Default for Reminder {
@@ -43,6 +45,7 @@ impl Default for Reminder {
             repeat_weekdays_mask: 0,
             repeating: false,
             checklist: Vec::new(),
+            snoozed_from: None,
         }
     }
 }

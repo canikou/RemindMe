@@ -108,6 +108,8 @@ pub fn edited_reminder(
     // The prefilled fields are lossy (remaining seconds, minute-rounded times): untouched keeps the exact due time.
     if f.schedule_key() == f.initial {
         r.next = original.next;
+    } else {
+        r.snoozed_from = None;
     }
     r.enforce_checklist_constraints();
     Ok(r)
@@ -124,7 +126,9 @@ pub fn finish_reminder(
         return false;
     };
     if !done {
-        store.items[i].next = now + chrono::Duration::seconds(SNOOZE_SECONDS);
+        let r = &mut store.items[i];
+        r.snoozed_from.get_or_insert(r.next); // a second snooze keeps the first anchor
+        r.next = now + chrono::Duration::seconds(SNOOZE_SECONDS);
     } else if !store.items[i].repeating {
         let r = store.items.remove(i);
         sched::append_completed(&mut store.completed, &r, now);

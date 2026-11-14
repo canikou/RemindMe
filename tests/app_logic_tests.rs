@@ -91,6 +91,29 @@ fn done_on_repeating_reschedules() {
 }
 
 #[test]
+fn done_after_snooze_schedules_from_the_original_due_time() {
+    let t0 = Local::now();
+    let mut s = store_with(relative("a", t0, true));
+    let snooze = Duration::seconds(SNOOZE_SECONDS);
+    assert!(finish_reminder(&mut s, "a", false, t0));
+    assert!(finish_reminder(&mut s, "a", true, t0 + snooze));
+    assert_eq!(s.items[0].next, t0 + Duration::hours(1));
+    assert_eq!(s.items[0].snoozed_from, None);
+}
+
+#[test]
+fn snoozing_twice_keeps_the_first_anchor() {
+    let t0 = Local::now();
+    let snooze = Duration::seconds(SNOOZE_SECONDS);
+    let mut s = store_with(relative("a", t0, true));
+    assert!(finish_reminder(&mut s, "a", false, t0));
+    assert!(finish_reminder(&mut s, "a", false, t0 + snooze));
+    assert_eq!(s.items[0].snoozed_from, Some(t0));
+    assert!(finish_reminder(&mut s, "a", true, t0 + snooze * 2));
+    assert_eq!(s.items[0].next, t0 + Duration::hours(1));
+}
+
+#[test]
 fn finish_on_missing_reminder_reports_it() {
     let mut s = ReminderStore::new();
     assert!(!finish_reminder(&mut s, "gone", true, Local::now()));
