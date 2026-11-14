@@ -81,7 +81,8 @@ pub fn parse(text: &str) -> Pools {
     let mut result = defaults();
     let mut loaded: Pools = Default::default();
     let mut section: Option<usize> = None;
-    for line in text.lines().map(str::trim) {
+    // A BOM (Notepad's UTF-8) would hide the first section header.
+    for line in text.trim_start_matches('\u{feff}').lines().map(str::trim) {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }

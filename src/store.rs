@@ -256,9 +256,14 @@ impl ReminderStore {
         }
         let parsed = fs::read(&read_path)
             .map_err(|e| format!("Failed to read reminders file: {e}"))
-            .and_then(|bytes| match serde_json::from_slice::<Value>(&bytes) {
-                Ok(Value::Object(root)) => Ok(root),
-                _ => Err("Reminders file is corrupted (not a JSON object).".to_string()),
+            // Notepad and PowerShell 5 save UTF-8 with a BOM, which serde_json rejects.
+            .and_then(|bytes| {
+                match serde_json::from_slice::<Value>(
+                    bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes),
+                ) {
+                    Ok(Value::Object(root)) => Ok(root),
+                    _ => Err("Reminders file is corrupted (not a JSON object).".to_string()),
+                }
             });
         let root = match parsed {
             Ok(root) => root,
@@ -275,7 +280,11 @@ impl ReminderStore {
                 });
             }
         };
-        let mut dropped = 0;
+        // A list that isn't a list (hand edit, newer format) would be lost on the next save: back it up.
+        let mut dropped = ["reminders", "completed"]
+            .iter()
+            .filter(|k| root.get(**k).is_some_and(|v| !v.is_array()))
+            .count();
         if let Some(arr) = root.get("reminders").and_then(Value::as_array) {
             self.items = arr
                 .iter()

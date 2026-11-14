@@ -5,6 +5,11 @@
 ### Fixes
 
 - Linux: a reminder for a time that happens twice when clocks go back (like 1:30 AM on the fall-back night) fires at the first one, not an hour later.
+- Quitting while an update downloads or an update check is slow exits right away instead of waiting for it to finish (up to 10 minutes).
+- A reminders file or greetings.txt saved by Notepad (UTF-8 with BOM) loads instead of being set aside as corrupted or losing its first section.
+- A reminders file whose list was damaged (not a list) is backed up before the next save replaces it.
+- Dismissing the install prompt with Esc or by closing the window deletes the downloaded installer, like Cancel does.
+- "AT" in capitals works like "at" ("Pay rent AT 9am on Oct 26").
 
 ## 2.0.2 - 2026-11-13
 

@@ -156,10 +156,14 @@ pub enum Message {
     OpenUrl(String),
 }
 
+/// Runs `f` on a detached thread. Not `spawn_blocking`: dropping the tokio runtime at quit waits
+/// for those, so Quit during an update download (600 s timeout) would hang until it finished.
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
-    tokio::task::spawn_blocking(f)
-        .await
-        .expect("background task")
+    let (tx, rx) = iced::futures::channel::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.await.expect("background task")
 }
 
 impl App {
@@ -330,6 +334,13 @@ impl App {
         self.store.items.iter_mut().find(|r| r.id == id)
     }
 
+    /// Closes the dialog. A declined installer's download goes with it.
+    fn clear_modal(&mut self) {
+        if let Some(Modal::InstallNow(path)) = self.modal.take() {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
     /// Shows a dialog, opening the main window first if it's in the tray.
     fn show_modal(&mut self, modal: Modal) -> Task<Message> {
         self.modal = Some(modal);
@@ -447,7 +458,7 @@ impl App {
                     // Lives on in the tray: timers keep running with the window closed.
                     self.save();
                     self.main = None;
-                    self.modal = None;
+                    self.clear_modal();
                     self.more_open = false;
                 }
                 return window::close(id);
@@ -459,7 +470,7 @@ impl App {
                 if Some(id) == self.main {
                     self.more_open = false;
                     if !matches!(self.modal, Some(Modal::ConfirmShortRepeat { .. })) {
-                        self.modal = None;
+                        self.clear_modal();
                     }
                 }
             }
@@ -518,12 +529,7 @@ impl App {
                     Err(e) => return self.message("Import error", e),
                 }
             }
-            Message::CloseModal => {
-                // Declined installer: don't leave the download behind.
-                if let Some(Modal::InstallNow(path)) = self.modal.take() {
-                    let _ = std::fs::remove_file(&path);
-                }
-            }
+            Message::CloseModal => self.clear_modal(),
             Message::Edit(id) => {
                 if let Some(r) = self.find(&id) {
                     let form = edit::edit_form(r, Local::now());

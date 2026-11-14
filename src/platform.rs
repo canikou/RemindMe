@@ -2,7 +2,7 @@
 //! OS glue: tray icon, single-instance guard, opening URLs, Linux desktop integration.
 
 use std::fs::TryLockError;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -153,7 +153,8 @@ pub fn claim_instance() -> Instance {
             for stream in listener.incoming().flatten() {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
                 let mut line = String::new();
-                let mut reader = BufReader::new(&stream);
+                // Capped: a client that never sends a newline can't stall this thread for long.
+                let mut reader = BufReader::new((&stream).take(64));
                 if reader.read_line(&mut line).is_ok() && line.starts_with("show") {
                     send(External::ShowMain);
                     let _ = (&stream).write_all(b"ok\n");

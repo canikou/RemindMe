@@ -67,7 +67,7 @@ re!(
     &format!(r"(?i)^(.*?\S)\s+(?:on\s+)?((?:next\s+|this\s+)?(?:today|tomorrow|{DAY_WORDS}))$")
 );
 re!(TRAILING_ON_DATE, r"(?i)^(.*\S)\s+on\s+(.+)$");
-re!(AT_TIME, r"^(.*)\bat\s+([0-9:\sAaPpMm]+)$");
+re!(AT_TIME, r"(?i)^(.*)\bat\s+([0-9:\sAaPpMm]+)$");
 
 fn caps<'a>(re: &Regex, s: &'a str) -> Option<fancy_regex::Captures<'a, str>> {
     re.captures(s).ok().flatten()

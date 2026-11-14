@@ -50,6 +50,33 @@ fn corrupt_file_is_moved_aside_not_overwritten() {
 }
 
 #[test]
+fn file_with_utf8_bom_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reminders.json");
+    let text = json!({"version": 4, "completed": [], "reminders": [reminder_json("a", "Keep me")]});
+    std::fs::write(&path, format!("\u{feff}{text}")).unwrap();
+    let mut store = ReminderStore::with_paths(&path, None);
+
+    store.load().unwrap();
+    assert_eq!(store.items.len(), 1);
+    assert!(files_with_prefix(dir.path(), "reminders.json.corrupt-").is_empty());
+}
+
+#[test]
+fn list_that_is_not_a_list_is_backed_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reminders.json");
+    let text = json!({"version": 4, "completed": [], "reminders": {"a": 1}}).to_string();
+    std::fs::write(&path, &text).unwrap();
+    let mut store = ReminderStore::with_paths(&path, None);
+
+    store.load().unwrap();
+    let backups = files_with_prefix(dir.path(), "reminders.json.bak-");
+    assert_eq!(backups.len(), 1);
+    assert_eq!(std::fs::read_to_string(&backups[0]).unwrap(), text);
+}
+
+#[test]
 fn dropped_entries_are_backed_up_once_loaded() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("reminders.json");

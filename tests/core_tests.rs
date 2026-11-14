@@ -66,6 +66,11 @@ fn parse_date_time() {
         (b.title.as_str(), b.date, b.time_of_day),
         ("Pay rent", d(2099, 1, 5), t(18, 30))
     );
+    let upper = parse("Pay rent AT 9am on Oct 26 2099").unwrap();
+    assert_eq!(
+        (upper.title.as_str(), upper.date, upper.time_of_day),
+        ("Pay rent", d(2099, 10, 26), t(9, 0))
+    );
 
     let c = parse("Party at 5 Dec 2099 8pm").unwrap();
     assert_eq!((c.date, c.time_of_day), (d(2099, 12, 5), t(20, 0)));
@@ -762,6 +767,8 @@ fn greetings_file_round_trip() {
     let custom = greetings::parse("[evening]\nNight!\n");
     assert_eq!(custom[2], vec!["Night!".to_string()]);
     assert_eq!(custom[0], pools[0]);
+    let bom = greetings::parse("\u{feff}[evening]\nNight!\n");
+    assert_eq!(bom[2], vec!["Night!".to_string()]);
     // The repo's sample greetings.txt fills all three sections.
     let shipped =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/greetings.txt")).unwrap();
