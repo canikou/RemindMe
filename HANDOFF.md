@@ -1,4 +1,25 @@
-# RemindMe handoff (Terra → Polaris, 2026-11-15)
+# RemindMe handoff (Polaris, updated 2026-11-18, Kyo away)
+
+## Latest: Linux / Hyprland work on branch `fix/flap-overlap` (pushed, NOT merged)
+
+- Commits on top of main: `043df8a` flap tiles flip without overlapping digits; `aaa9b0a` popup + overlay float on tiling WMs (EWMH hints before map, new `src/wm.rs`) and a compact main window under 760 px; `0d2d4ed` Hyprland IPC speaks the Lua dispatch syntax (0.55+ Lua configs), with the classic syntax as a fallback. CI green (run 44237221186). CHANGELOG `## Unreleased` lists them.
+- Kyo's Terra (CachyOS, Hyprland 0.57.2, Lua config) runs the `0d2d4ed` AppImage (sha256 1d5ade88...5848). Previous builds: `~/Applications/RemindMe-2.0.3-x86_64.AppImage.bak-20261118` (released 2.0.3) and `.bak-20261118b` (aaa9b0a). Data backup: `~/.local/share/remindme-swap-backup-20261118-122009`.
+- Desktop test 2026-11-18 (sandboxed second instance, USER=rmsandbox, temp HOME): popup is a floating, pinned, focused 560x330 dialog; Done click -> `[debug] PopupDone` and it closes; Enter closes it too. No wm.rs errors in the debug log.
+- Lead on Kyo's "Done doesn't dismiss": under XWayland a popup that opens under a still pointer gets no pointer-enter, so the first click can miss until the mouse moves. Seen with synthetic input only. Needs Kyo with a real mouse on the new build; if still broken, run with `REMINDME_DEBUG=1` and check whether `PopupDone` is logged.
+- How to check: `cargo test --bin remindme flap` / `wm` (CI; too heavy to link on Polaris), and the desktop recipe above (book a DESKTOP slot with Terra Alpha).
+
+## Decisions for Kyo (away mode)
+
+- Tested on Terra with a sandboxed second instance instead of adding a reminder to Kyo's list. Nothing to undo.
+- Installed the `0d2d4ed` test build over the aaa9b0a test build Kyo had asked for. Undo: rename `.bak-20261118` (2.0.3) back.
+
+## Queued for Kyo
+
+- Merge `fix/flap-overlap` to main and release (2.0.4) once he confirms the popup and Done on his mouse. Recommendation: merge and release; the release-after-bump routine applies after he approves the bump.
+
+---
+
+# Earlier: Terra → Polaris, 2026-11-15
 
 ## Where things stand
 
