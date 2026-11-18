@@ -4,6 +4,8 @@
 
 ### Fixes
 
+- Linux tiling window managers (Hyprland, i3 and others): the due popup opens as a floating, fixed-size dialog instead of filling a tile, and the overlay floats on every workspace. On Hyprland both are pinned and the popup comes to the front.
+- The main window stays readable when a tiling window manager makes it narrow: the board stacks and the list drops its Repeats column.
 - The split-flap countdown flips cleanly: the old and new digits no longer show on top of each other mid-flip, and the flap now folds down and lands instead of wiping.
 
 ## 2.0.3 - 2026-11-15

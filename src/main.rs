@@ -6,6 +6,8 @@ mod flap;
 mod platform;
 mod theme;
 mod updater;
+#[cfg(target_os = "linux")]
+mod wm;
 
 use platform::Instance;
 

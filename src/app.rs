@@ -8,8 +8,8 @@ use crate::theme::{self as th, ButtonKind, Palette, pt};
 use crate::updater::{self, CheckResult};
 use chrono::{DateTime, Local, Timelike};
 use iced::widget::{
-    Column, button, checkbox, column, container, mouse_area, opaque, rich_text, row, scrollable,
-    space, span, stack, text, text_editor, text_input,
+    Column, button, checkbox, column, container, mouse_area, opaque, responsive, rich_text, row,
+    scrollable, space, span, stack, text, text_editor, text_input,
 };
 use iced::{
     Alignment, Color, Element, Font, Length, Padding, Size, Subscription, Task, event, keyboard,
@@ -36,6 +36,8 @@ const COL_TIME: f32 = 112.0;
 const COL_REPEATS: f32 = 168.0;
 const COL_DUE: f32 = 104.0;
 const COL_ACTIONS: f32 = 232.0;
+/// Below this main-window width the board stacks and the table drops its REPEATS column.
+const COMPACT_WIDTH: f32 = 760.0;
 const INPUT_ID: &str = "reminder-input";
 /// The popup grabs focus when it appears; input aimed at the app the user was in is ignored this long.
 const POPUP_INPUT_GUARD: Duration = Duration::from_millis(1500);
@@ -244,6 +246,7 @@ impl App {
                     }),
                     resizable: false,
                     decorations: false,
+                    visible: OPEN_VISIBLE,
                     level: window::Level::AlwaysOnTop,
                     icon: platform::window_icon(),
                     exit_on_close_request: false,
@@ -251,7 +254,7 @@ impl App {
                     ..Default::default()
                 });
                 self.overlay = Some(id);
-                keep_on_top(open)
+                show_overlay(open)
             }
             (false, Some(id)) => {
                 self.overlay = None;
@@ -395,6 +398,9 @@ impl App {
             let (window, open) = window::open(window::Settings {
                 size: POPUP_SIZE,
                 position: window::Position::Centered,
+                // Fixed size on Linux: tiling window managers float fixed-size windows.
+                resizable: !cfg!(target_os = "linux"),
+                visible: OPEN_VISIBLE,
                 level: window::Level::AlwaysOnTop,
                 icon: platform::window_icon(),
                 exit_on_close_request: false,
@@ -408,11 +414,7 @@ impl App {
                 title,
                 due,
             });
-            return Task::batch([
-                keep_on_top(open),
-                window::gain_focus(window),
-                window::request_user_attention(window, Some(window::UserAttention::Critical)),
-            ]);
+            return show_popup(open);
         }
         Task::none()
     }
@@ -858,7 +860,7 @@ impl App {
             return t;
         }
         if Some(id) == self.overlay {
-            "RemindMe Overlay".into()
+            OVERLAY_TITLE.into()
         } else {
             remindme::APP_NAME.into()
         }
@@ -889,7 +891,11 @@ impl App {
 
     fn main_view(&self) -> Element<'_, Message> {
         let p = self.palette;
-        let content = column![self.board_view(), self.body_view()];
+        // Tiling window managers squeeze the window below its minimum size; lay out for that.
+        let content = responsive(move |size| {
+            let compact = size.width < COMPACT_WIDTH;
+            column![self.board_view(compact), self.body_view(compact)].into()
+        });
         let mut layers = stack![content].width(Length::Fill).height(Length::Fill);
         if self.more_open {
             let item = |label: &'static str, m: Message| {
@@ -945,7 +951,7 @@ impl App {
         layers.into()
     }
 
-    fn board_view(&self) -> Element<'_, Message> {
+    fn board_view(&self, compact: bool) -> Element<'_, Message> {
         let p = self.palette;
         let muted = |s: String| text(s).size(pt(9.0)).color(p.board_muted);
         let next = self.store.items.first();
@@ -974,10 +980,13 @@ impl App {
                 .style(th::button_style(p, kind))
                 .on_press_maybe(m)
         };
-        let bar = row![
+        let status = row![
             headline,
             muted("  ·  ".into()),
             muted(tf::format_clock_time(&self.now)),
+        ]
+        .align_y(Alignment::Center);
+        let buttons = row![
             space::horizontal(),
             board_btn(
                 "Overlay",
@@ -997,6 +1006,11 @@ impl App {
         ]
         .spacing(4)
         .align_y(Alignment::Center);
+        let bar: Element<'_, Message> = if compact {
+            column![buttons, status].spacing(8).into()
+        } else {
+            row![status, buttons].align_y(Alignment::Center).into()
+        };
 
         let (title, meta) = match next {
             None => (
@@ -1018,20 +1032,31 @@ impl App {
         } else {
             p.board_muted
         };
-        let next_row = row![
-            column![
-                text(title)
-                    .size(pt(19.0))
-                    .font(th::SEMIBOLD)
-                    .color(p.board_text),
-                muted(meta)
-            ]
-            .spacing(2)
-            .width(Length::Fill),
-            self.flap.view(46.0, p.board_raised, glyph, p.board),
+        let heading = column![
+            text(title)
+                .size(pt(if compact { 15.0 } else { 19.0 }))
+                .font(th::SEMIBOLD)
+                .color(p.board_text),
+            muted(meta)
         ]
-        .spacing(24)
-        .align_y(Alignment::End);
+        .spacing(2)
+        .width(Length::Fill);
+        let next_row: Element<'_, Message> = if compact {
+            column![
+                self.flap.view(34.0, p.board_raised, glyph, p.board),
+                heading
+            ]
+            .spacing(10)
+            .into()
+        } else {
+            row![
+                heading,
+                self.flap.view(46.0, p.board_raised, glyph, p.board),
+            ]
+            .spacing(24)
+            .align_y(Alignment::End)
+            .into()
+        };
 
         container(column![bar, next_row].spacing(14))
             .padding(Padding {
@@ -1045,7 +1070,7 @@ impl App {
             .into()
     }
 
-    fn body_view(&self) -> Element<'_, Message> {
+    fn body_view(&self, compact: bool) -> Element<'_, Message> {
         let p = self.palette;
         let departures: Element<'_, Message> = if self.store.items.is_empty() {
             container(
@@ -1062,25 +1087,28 @@ impl App {
             .into()
         } else {
             let caps = |s: &'static str| text(s).size(pt(8.0)).font(th::BOLD).color(p.muted);
-            let header = row![
+            let mut header = row![
                 caps("TIME").width(COL_TIME),
                 caps("REMINDER").width(Length::Fill),
-                caps("REPEATS").width(COL_REPEATS),
-                caps("DUE IN").width(COL_DUE).align_x(Alignment::End),
-                space().width(COL_ACTIONS),
-            ]
-            .spacing(12)
-            .padding(Padding {
-                left: 17.0,
-                right: 19.0,
-                ..Padding::ZERO
-            });
+            ];
+            if !compact {
+                header = header.push(caps("REPEATS").width(COL_REPEATS));
+            }
+            let header = header
+                .push(caps("DUE IN").width(COL_DUE).align_x(Alignment::End))
+                .push(space().width(if compact { 0.0 } else { COL_ACTIONS }))
+                .spacing(12)
+                .padding(Padding {
+                    left: 17.0,
+                    right: 19.0,
+                    ..Padding::ZERO
+                });
             let rows = Column::with_children(
                 self.store
                     .items
                     .iter()
                     .enumerate()
-                    .map(|(i, r)| self.departure_row(r, i == 0)),
+                    .map(|(i, r)| self.departure_row(r, i == 0, compact)),
             );
             let list = container(
                 scrollable(rows)
@@ -1130,7 +1158,12 @@ impl App {
             .into()
     }
 
-    fn departure_row<'a>(&'a self, r: &'a Reminder, is_next: bool) -> Element<'a, Message> {
+    fn departure_row<'a>(
+        &'a self,
+        r: &'a Reminder,
+        is_next: bool,
+        compact: bool,
+    ) -> Element<'a, Message> {
         let p = self.palette;
         let left = (r.next - self.now).num_seconds();
         let time_col = column![
@@ -1175,7 +1208,12 @@ impl App {
                 .style(th::button_style(p, kind))
                 .on_press(m)
         };
-        let mut actions = row![space::horizontal()].spacing(2).width(COL_ACTIONS);
+        // Compact rows put the buttons on a line of their own under the cells.
+        let mut actions = row![space::horizontal()].spacing(2).width(if compact {
+            Length::Fill
+        } else {
+            Length::Fixed(COL_ACTIONS)
+        });
         if r.repeating {
             actions = actions.push(action(
                 "Subtasks",
@@ -1196,22 +1234,28 @@ impl App {
             ));
 
         let due = left <= 0;
-        let cells = row![
-            time_col,
-            info,
-            text(sched::repeats_cell_text(r))
-                .size(pt(10.0))
-                .color(p.muted)
-                .width(COL_REPEATS),
+        let mut cells = row![time_col, info].spacing(12);
+        if !compact {
+            cells = cells.push(
+                text(sched::repeats_cell_text(r))
+                    .size(pt(10.0))
+                    .color(p.muted)
+                    .width(COL_REPEATS),
+            );
+        }
+        let cells = cells.push(
             text(sched::countdown_cell_text(left))
                 .size(pt(11.0))
                 .font(if due { th::BOLD } else { th::SEMIBOLD })
                 .color(if due { p.due_text } else { p.text })
                 .width(COL_DUE)
                 .align_x(Alignment::End),
-            actions,
-        ]
-        .spacing(12);
+        );
+        let cells: Element<'_, Message> = if compact {
+            column![cells, actions].spacing(4).into()
+        } else {
+            cells.push(actions).into()
+        };
 
         // Thin track that fills as the reminder approaches; nothing at all 6+ hours out.
         let progress = sched::journey_progress(r, self.now);
@@ -1731,8 +1775,66 @@ fn fit_overlay_countdown(seconds: i64, column_px: f32, px: f32) -> String {
 }
 
 /// X11 window managers ignore the level set at creation; set it again once the window is mapped.
-fn keep_on_top(open: Task<window::Id>) -> Task<Message> {
-    open.then(|id| window::set_level(id, window::Level::AlwaysOnTop))
+fn keep_on_top(id: window::Id) -> Task<Message> {
+    window::set_level(id, window::Level::AlwaysOnTop)
+}
+
+/// Brings a new popup to the front and flashes it.
+fn raise_popup(id: window::Id) -> Task<Message> {
+    keep_on_top(id)
+        .chain(window::gain_focus(id))
+        .chain(window::request_user_attention(
+            id,
+            Some(window::UserAttention::Critical),
+        ))
+}
+
+const OVERLAY_TITLE: &str = "RemindMe Overlay";
+
+/// Popup titles are "<reminder> | <due>"; the main window and overlay have fixed titles.
+#[cfg(target_os = "linux")]
+fn is_popup_title(title: &str) -> bool {
+    title.contains(" | ")
+}
+
+/// Linux opens the popup and overlay hidden, so the window-manager hints (wm.rs) are set before
+/// the window is mapped: tiling managers decide float vs. tile at map time.
+const OPEN_VISIBLE: bool = !cfg!(target_os = "linux");
+
+#[cfg(target_os = "linux")]
+fn show_prepared(
+    open: Task<window::Id>,
+    role: crate::wm::Role,
+    raise: fn(window::Id) -> Task<Message>,
+) -> Task<Message> {
+    use crate::wm::{self, Role};
+    open.then(move |id| {
+        window::raw_id::<Message>(id).then(move |xid| {
+            wm::prepare(xid, role);
+            wm::after_map(
+                role,
+                match role {
+                    Role::Popup => is_popup_title,
+                    Role::Overlay => |t| t == OVERLAY_TITLE,
+                },
+            );
+            window::set_mode(id, window::Mode::Windowed).chain(raise(id))
+        })
+    })
+}
+
+fn show_popup(open: Task<window::Id>) -> Task<Message> {
+    #[cfg(target_os = "linux")]
+    return show_prepared(open, crate::wm::Role::Popup, raise_popup);
+    #[cfg(not(target_os = "linux"))]
+    open.then(raise_popup)
+}
+
+fn show_overlay(open: Task<window::Id>) -> Task<Message> {
+    #[cfg(target_os = "linux")]
+    return show_prepared(open, crate::wm::Role::Overlay, keep_on_top);
+    #[cfg(not(target_os = "linux"))]
+    open.then(keep_on_top)
 }
 
 fn text_input_focus<T: Send + 'static>() -> Task<T> {
