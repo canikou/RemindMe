@@ -5,7 +5,8 @@
 //! filled a whole tile and the overlay took a slot. The windows open hidden, get EWMH hints that
 //! every manager reads at map time (dialog / utility type, above, sticky, skip taskbar), and are
 //! shown after. Under Hyprland they are also floated, pinned and (the popup) focused through its
-//! IPC socket, because Hyprland does not focus or raise windows that ask for it by default.
+//! IPC socket, because Hyprland does not focus or raise windows that ask for it by default. Both
+//! dispatch syntaxes are handled: Lua configs (0.55+) and classic hyprland.conf.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -103,6 +104,7 @@ mod hyprland {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU8, Ordering};
     use std::time::Duration;
 
     type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -129,12 +131,42 @@ mod hyprland {
         Ok(out)
     }
 
-    fn dispatch(socket: &PathBuf, args: &str) -> Result<()> {
+    /// Which dispatch syntax this Hyprland speaks: 0 unknown, 1 Lua (0.55+ with a Lua config),
+    /// 2 classic hyprland.conf. Learned from the first command that succeeds.
+    static SYNTAX: AtomicU8 = AtomicU8::new(0);
+    const LUA: u8 = 1;
+    const CLASSIC: u8 = 2;
+
+    fn send(socket: &PathBuf, args: &str) -> Result<()> {
         let reply = request(socket, &format!("dispatch {args}"))?;
         if reply.trim() != "ok" {
             return Err(format!("`dispatch {args}`: {}", reply.trim()).into());
         }
         Ok(())
+    }
+
+    /// Runs one action in whichever syntax this Hyprland accepts. Lua configs turn
+    /// `dispatch X` into `hl.dispatch(X)`, so the classic form fails there and vice versa.
+    fn dispatch(socket: &PathBuf, lua: &str, classic: &str) -> Result<()> {
+        let order = match SYNTAX.load(Ordering::Relaxed) {
+            CLASSIC => [(CLASSIC, classic), (LUA, lua)],
+            _ => [(LUA, lua), (CLASSIC, classic)],
+        };
+        let mut errors = Vec::new();
+        for (syntax, args) in order {
+            match send(socket, args) {
+                Ok(()) => {
+                    SYNTAX.store(syntax, Ordering::Relaxed);
+                    return Ok(());
+                }
+                Err(e) => errors.push(e.to_string()),
+            }
+        }
+        Err(errors.join("; ").into())
+    }
+
+    fn lua_call(function: &str, target: &str, extra: &str) -> String {
+        format!("{function}({{ window = \"{target}\"{extra} }})")
     }
 
     /// One of our windows as Hyprland lists it.
@@ -175,18 +207,41 @@ mod hyprland {
             return Err("window not found in the client list".into());
         };
         let target = format!("address:{}", c.address);
+        // Each step is tried on its own: a failed pin must not keep the popup from getting focus.
+        let mut steps: Vec<(String, String)> = Vec::new();
         if !c.floating {
-            dispatch(socket, &format!("setfloating {target}"))?;
+            steps.push((
+                lua_call("hl.dsp.window.float", &target, ", action = \"enable\""),
+                format!("setfloating {target}"),
+            ));
         }
-        // `pin` toggles, so only pin a window that is not pinned yet.
+        // Classic `pin` only toggles, so only pin a window that is not pinned yet.
         if !c.pinned {
-            dispatch(socket, &format!("pin {target}"))?;
+            steps.push((
+                lua_call("hl.dsp.window.pin", &target, ", action = \"enable\""),
+                format!("pin {target}"),
+            ));
         }
         if role == Role::Popup {
-            dispatch(socket, &format!("focuswindow {target}"))?;
-            dispatch(socket, &format!("alterzorder top,{target}"))?;
+            steps.push((
+                lua_call("hl.dsp.focus", &target, ""),
+                format!("focuswindow {target}"),
+            ));
+            steps.push((
+                lua_call("hl.dsp.window.alter_zorder", &target, ", mode = \"top\""),
+                format!("alterzorder top,{target}"),
+            ));
         }
-        Ok(())
+        let errors: Vec<String> = steps
+            .iter()
+            .filter_map(|(lua, classic)| dispatch(socket, lua, classic).err())
+            .map(|e| e.to_string())
+            .collect();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join(" | ").into())
+        }
     }
 
     #[cfg(test)]
@@ -216,6 +271,22 @@ mod hyprland {
             );
             assert!(find(CLIENTS, 8, popup_title).is_none());
             assert!(find("not json", 7, popup_title).is_none());
+        }
+
+        #[test]
+        fn lua_calls_target_the_window() {
+            assert_eq!(
+                lua_call(
+                    "hl.dsp.window.float",
+                    "address:0x3",
+                    ", action = \"enable\""
+                ),
+                r#"hl.dsp.window.float({ window = "address:0x3", action = "enable" })"#
+            );
+            assert_eq!(
+                lua_call("hl.dsp.focus", "address:0x3", ""),
+                r#"hl.dsp.focus({ window = "address:0x3" })"#
+            );
         }
     }
 }
