@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- The split-flap countdown flips cleanly: the old and new digits no longer show on top of each other mid-flip, and the flap now folds down and lands instead of wiping.
+
 ## 2.0.3 - 2026-11-15
 
 ### Fixes
