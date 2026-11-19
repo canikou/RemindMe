@@ -720,6 +720,30 @@ fn scheduling_rules() {
         Local.with_ymd_and_hms(2030, 6, 13, 7, 0, 0).unwrap()
     );
 
+    // "at <time> and every hour": first fire at the time, then hourly from it.
+    for input in [
+        "Music at 2:15PM every hour",
+        "Music at 2:15PM and every hour",
+        "Music at 2:15PM, and every hour",
+        "Music at 2:15PM then every hour",
+    ] {
+        let p = parser::parse_input_at(input, now).unwrap();
+        assert_eq!(p.title, "Music", "{input}");
+        let mut r = schedule::reminder_from_parse(&p, now);
+        assert_eq!(
+            (r.schedule_type, r.repeating, r.interval_seconds),
+            (ScheduleType::Relative, true, 3600),
+            "{input}"
+        );
+        let first = Local.with_ymd_and_hms(2030, 6, 12, 14, 15, 0).unwrap();
+        assert_eq!(r.next, first, "{input}");
+        schedule::reschedule_after_acknowledge(&mut r, first + Duration::seconds(30));
+        assert_eq!(r.next, first + Duration::hours(1), "{input}");
+    }
+    // A title that only ends in "and" keeps it when there is no repeat.
+    let p = parser::parse_input_at("Salt and pepper at 2:15PM", now).unwrap();
+    assert_eq!(p.title, "Salt and pepper");
+
     // History bumps the count for a repeated pattern instead of adding a row.
     let mut history = Vec::new();
     let mut once = sample("a", "Stretch", false, ScheduleType::Relative, 0);

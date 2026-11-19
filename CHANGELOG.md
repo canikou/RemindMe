@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changes
+
+- "Music at 2:15PM and every hour" (also ", and" / "then") works: it fires at 2:15 PM, then every hour from there. Without "and" it already did.
+
 ### Fixes
 
 - Linux tiling window managers (Hyprland, i3 and others): the due popup opens as a floating, fixed-size dialog instead of filling a tile, and the overlay floats on every workspace. On Hyprland both are pinned and the popup comes to the front.
