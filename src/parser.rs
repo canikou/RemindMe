@@ -37,6 +37,8 @@ re!(
     r"(?i)\b(mon(day)?s?|tue(s|sday)?s?|wed(nesday)?s?|thu(r|rs|rsday)?s?|fri(day)?s?|sat(urday)?s?|sun(day)?s?|weekday(s)?|weekend(s)?)\b"
 );
 re!(REPEAT_DIRECTIVE, r"(?i)^(.*)\bevery\b\s+(.+)$");
+// "at 2:15PM and every hour", "in 10m, then every 2h": a joiner before "every".
+re!(REPEAT_JOINER, r"(?i)(?:\s*,|\s*&|\s+and|\s+then)+\s*$");
 re!(SCHEDULE_KEYWORD, r"(?i)\b(in|at|on)\b");
 re!(
     DURATION_TOKEN,
@@ -492,7 +494,13 @@ pub fn parse_input_at(input: &str, now: DateTime<Local>) -> Result<ParseResult, 
     let mut expression = s.to_string();
     let mut repeat_spec = String::new();
     if let Some(c) = caps(&REPEAT_DIRECTIVE, s) {
-        expression = group(&c, 1).trim().to_string();
+        let head = group(&c, 1);
+        let joiner = REPEAT_JOINER
+            .find(head)
+            .ok()
+            .flatten()
+            .map_or(head.len(), |m| m.start());
+        expression = head[..joiner].trim().to_string();
         repeat_spec = group(&c, 2).trim().to_string();
         if expression.is_empty() || repeat_spec.is_empty() {
             return Err(

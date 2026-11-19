@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- "Music at 2:15PM and every hour" (also ", and" / "then") works: it fires at 2:15 PM, then every hour from there. Without "and" it already did.
+
 ## 2.0.3 - 2026-11-15
 
 ### Fixes
