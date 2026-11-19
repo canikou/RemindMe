@@ -1,4 +1,16 @@
-# RemindMe handoff (Polaris, updated 2026-11-18, Kyo away)
+# RemindMe handoff (Polaris, 2026-11-19)
+
+## Current: v2.0.4 released
+
+- main = `d19a02b` "Bump version to 2.0.4", tag `v2.0.4`, GitHub release published with the 3 CI files (CI 44469644487 green).
+- Contents: Hyprland/tiling popup + overlay float (with the Lua IPC fallback), compact main window, flap without overlap, an on/off switch per reminder (`Reminder.paused`, `edit::set_paused`), and "at 2:15PM and every hour".
+- Kyo asked for it to ship so his Terra install updates through the in-app updater.
+- Decided (Kyo said to follow my recommendations): a stray "in" before "at" is NOT dropped from titles, because that would break "Check in at 9am".
+- Open: Kyo's real-mouse check of Done on Hyprland; his first look at the switch.
+
+---
+
+# Earlier: Polaris, 2026-11-18 (Kyo away)
 
 ## Latest: Linux / Hyprland work on branch `fix/flap-overlap` (pushed, NOT merged)
 
