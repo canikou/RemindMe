@@ -10,6 +10,7 @@ Current version: `v2.0.3`.
 - Repeat scheduling via interval syntax (`every 2 hours`) and weekday syntax (`every weekdays`, `every Mon-Fri`, `every Monday through Friday`).
 - Integer math support in duration input (for example `(3*10) minutes`).
 - Repeating reminder subtasks with progress tracking and per-cycle reset.
+- An on/off switch on every reminder: off reminders stay in the list but never pop up; back on, a repeating one skips the times it missed.
 - Popup notifications with `Snooze 5 min` and `Done` (Esc snoozes).
 - Closing a reminder popup with `X` behaves the same as pressing `OK`.
 - Single-instance guard prevents duplicate app processes.
@@ -31,6 +32,7 @@ Current version: `v2.0.3`.
 - `Daily check at 19:30`
 - `Stand up at 7:00AM every day`
 - `Hydrate in 10m every 2 hours`
+- `Music at 2:15PM and every hour`
 - `Reminder at 7:00AM every Saturday, etc.`
 - `Workout at 6:30AM every Mon-Fri`
 - `Plan sprint at 8:15AM every weekdays`

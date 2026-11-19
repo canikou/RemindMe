@@ -9,7 +9,7 @@ use crate::updater::{self, CheckResult};
 use chrono::{DateTime, Local, Timelike};
 use iced::widget::{
     Column, button, checkbox, column, container, mouse_area, opaque, responsive, rich_text, row,
-    scrollable, space, span, stack, text, text_editor, text_input,
+    scrollable, space, span, stack, text, text_editor, text_input, toggler,
 };
 use iced::{
     Alignment, Color, Element, Font, Length, Padding, Size, Subscription, Task, event, keyboard,
@@ -36,6 +36,7 @@ const COL_TIME: f32 = 112.0;
 const COL_REPEATS: f32 = 168.0;
 const COL_DUE: f32 = 104.0;
 const COL_ACTIONS: f32 = 232.0;
+const COL_SWITCH: f32 = 34.0;
 /// Below this main-window width the board stacks and the table drops its REPEATS column.
 const COMPACT_WIDTH: f32 = 760.0;
 const INPUT_ID: &str = "reminder-input";
@@ -149,6 +150,8 @@ pub enum Message {
     SubtaskCheck(usize, bool),
     SubtasksSave,
     RowSubtaskToggled(String, usize, bool),
+    /// The row switch: true = on (fires), false = off (paused).
+    SetActive(String, bool),
     PopupDone,
     PopupSnooze,
     StartupUpdateCheck,
@@ -284,7 +287,7 @@ impl App {
     }
 
     fn refresh_flap(&mut self) {
-        let text = match self.store.items.first() {
+        let text = match self.store.active().next() {
             None => "--:--".to_string(),
             Some(next) => {
                 let left = (next.next - self.now).num_seconds();
@@ -379,7 +382,7 @@ impl App {
     fn trigger_due(&mut self) {
         for r in &self.store.items {
             let active = self.popup.as_ref().is_some_and(|p| p.reminder_id == r.id);
-            if r.next <= self.now && !active && !self.queue.contains(&r.id) {
+            if !r.paused && r.next <= self.now && !active && !self.queue.contains(&r.id) {
                 self.queue.push(r.id.clone());
             }
         }
@@ -391,7 +394,7 @@ impl App {
         }
         while !self.queue.is_empty() {
             let id = self.queue.remove(0);
-            let Some(r) = self.find(&id).filter(|r| r.next <= self.now) else {
+            let Some(r) = self.find(&id).filter(|r| !r.paused && r.next <= self.now) else {
                 continue;
             };
             let (title, due) = (r.title.clone(), r.next);
@@ -505,6 +508,21 @@ impl App {
                 }
             }
             Message::PopupDone => return self.finish_popup(true),
+            Message::SetActive(id, on) => {
+                if !edit::set_paused(&mut self.store, &id, !on, Local::now()) {
+                    return Task::none();
+                }
+                // Switched off while due: drop its queued or open popup without Done or Snooze.
+                let close = if on {
+                    Task::none()
+                } else {
+                    self.queue.retain(|q| *q != id);
+                    self.popup
+                        .take_if(|p| p.reminder_id == id)
+                        .map_or_else(Task::none, |p| window::close(p.window))
+                };
+                return Task::batch([close, self.commit()]);
+            }
             Message::PopupSnooze => return self.finish_popup(false),
             Message::Input(v) => {
                 self.input = v;
@@ -954,7 +972,7 @@ impl App {
     fn board_view(&self, compact: bool) -> Element<'_, Message> {
         let p = self.palette;
         let muted = |s: String| text(s).size(pt(9.0)).color(p.board_muted);
-        let next = self.store.items.first();
+        let next = self.store.active().next();
         let left = next.map_or(i64::MAX, |n| (n.next - self.now).num_seconds());
 
         // Station-style announcement when the next one is close; the greeting otherwise.
@@ -1088,6 +1106,7 @@ impl App {
         } else {
             let caps = |s: &'static str| text(s).size(pt(8.0)).font(th::BOLD).color(p.muted);
             let mut header = row![
+                caps("ON").width(COL_SWITCH),
                 caps("TIME").width(COL_TIME),
                 caps("REMINDER").width(Length::Fill),
             ];
@@ -1166,8 +1185,25 @@ impl App {
     ) -> Element<'a, Message> {
         let p = self.palette;
         let left = (r.next - self.now).num_seconds();
+        let is_next = is_next && !r.paused;
+        // Switched-off rows read as muted throughout.
+        let ink = if r.paused { p.muted } else { p.text };
+        let switch = container(
+            toggler(!r.paused)
+                .size(16)
+                .style(th::toggler_style(p))
+                .on_toggle({
+                    let id = r.id.clone();
+                    move |on| Message::SetActive(id.clone(), on)
+                }),
+        )
+        .width(COL_SWITCH)
+        .padding(Padding {
+            top: 2.0,
+            ..Padding::ZERO
+        });
         let time_col = column![
-            text(hm(&r.next)).size(pt(11.0)),
+            text(hm(&r.next)).size(pt(11.0)).color(ink),
             text(sched::due_day_text(r.next, self.now))
                 .size(pt(10.0))
                 .color(p.muted)
@@ -1175,7 +1211,7 @@ impl App {
         .spacing(1)
         .width(COL_TIME);
 
-        let mut info = column![text(&r.title).size(pt(11.0)).font(th::SEMIBOLD)]
+        let mut info = column![text(&r.title).size(pt(11.0)).font(th::SEMIBOLD).color(ink)]
             .spacing(4)
             .width(Length::Fill);
         if !r.checklist.is_empty() {
@@ -1233,8 +1269,8 @@ impl App {
                 Message::Delete(r.id.clone()),
             ));
 
-        let due = left <= 0;
-        let mut cells = row![time_col, info].spacing(12);
+        let due = left <= 0 && !r.paused;
+        let mut cells = row![switch, time_col, info].spacing(12);
         if !compact {
             cells = cells.push(
                 text(sched::repeats_cell_text(r))
@@ -1244,12 +1280,16 @@ impl App {
             );
         }
         let cells = cells.push(
-            text(sched::countdown_cell_text(left))
-                .size(pt(11.0))
-                .font(if due { th::BOLD } else { th::SEMIBOLD })
-                .color(if due { p.due_text } else { p.text })
-                .width(COL_DUE)
-                .align_x(Alignment::End),
+            text(if r.paused {
+                "Off".to_string()
+            } else {
+                sched::countdown_cell_text(left)
+            })
+            .size(pt(11.0))
+            .font(if due { th::BOLD } else { th::SEMIBOLD })
+            .color(if due { p.due_text } else { ink })
+            .width(COL_DUE)
+            .align_x(Alignment::End),
         );
         let cells: Element<'_, Message> = if compact {
             column![cells, actions].spacing(4).into()
@@ -1258,7 +1298,11 @@ impl App {
         };
 
         // Thin track that fills as the reminder approaches; nothing at all 6+ hours out.
-        let progress = sched::journey_progress(r, self.now);
+        let progress = if r.paused {
+            0.0
+        } else {
+            sched::journey_progress(r, self.now)
+        };
         let journey: Element<'_, Message> = if progress <= 0.0 {
             space().height(3).into()
         } else {
@@ -1606,7 +1650,7 @@ impl App {
     // ---------- overlay ----------
 
     fn overlay_rows(&self) -> impl Iterator<Item = (usize, &Reminder)> {
-        self.store.items.iter().take(OVERLAY_MAX_ROWS).enumerate()
+        self.store.active().take(OVERLAY_MAX_ROWS).enumerate()
     }
 
     fn overlay_row_height(r: &Reminder, is_next: bool) -> f32 {
@@ -1616,14 +1660,14 @@ impl App {
 
     /// Exact height of the overlay's content, so the window hugs its rows.
     fn overlay_content_height(&self) -> f32 {
-        if self.store.items.is_empty() {
+        if self.store.active().next().is_none() {
             return 44.0;
         }
         let rows: f32 = self
             .overlay_rows()
             .map(|(i, r)| Self::overlay_row_height(r, i == 0) + if i > 0 { 1.0 } else { 0.0 })
             .sum();
-        let more = if self.store.items.len() > OVERLAY_MAX_ROWS {
+        let more = if self.store.active().count() > OVERLAY_MAX_ROWS {
             26.0
         } else {
             0.0
@@ -1639,7 +1683,7 @@ impl App {
         let meta = |s: String| text(s).size(pt(8.0)).color(p.board_muted);
 
         let mut col = Column::new();
-        if self.store.items.is_empty() {
+        if self.store.active().next().is_none() {
             col = col.push(
                 container(meta("No upcoming reminders".into()))
                     .height(38)
@@ -1693,11 +1737,11 @@ impl App {
                     .align_y(Alignment::Center),
             );
         }
-        if self.store.items.len() > OVERLAY_MAX_ROWS {
+        if self.store.active().count() > OVERLAY_MAX_ROWS {
             col = col.push(
                 container(meta(format!(
                     "+{} more",
-                    self.store.items.len() - OVERLAY_MAX_ROWS
+                    self.store.active().count() - OVERLAY_MAX_ROWS
                 )))
                 .height(26)
                 .align_y(Alignment::Center),

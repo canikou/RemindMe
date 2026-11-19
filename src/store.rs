@@ -121,6 +121,10 @@ fn reminder_to_json(r: &Reminder) -> Value {
     if let Some(t) = r.snoozed_from {
         v["snoozed_from_epoch"] = t.timestamp().into();
     }
+    // Only written when set, so files stay byte-compatible for reminders that were never paused.
+    if r.paused {
+        v["paused"] = true.into();
+    }
     v
 }
 
@@ -154,6 +158,7 @@ fn reminder_from_json(v: &Value, require_id: bool) -> Option<Reminder> {
         repeating: o.get("repeating").and_then(Value::as_bool).unwrap_or(false),
         checklist,
         snoozed_from: epoch_of(o, "snoozed_from_epoch"),
+        paused: o.get("paused").and_then(Value::as_bool).unwrap_or(false),
     };
     r.enforce_checklist_constraints();
     if (require_id && r.id.is_empty()) || r.title.is_empty() {
@@ -416,7 +421,13 @@ impl ReminderStore {
         Ok(count)
     }
 
+    /// Soonest first; switched-off reminders go after all the active ones.
     pub fn sort_soonest_first(&mut self) {
-        self.items.sort_by_key(|r| r.next);
+        self.items.sort_by_key(|r| (r.paused, r.next));
+    }
+
+    /// The reminders that are switched on, soonest first.
+    pub fn active(&self) -> impl Iterator<Item = &Reminder> {
+        self.items.iter().filter(|r| !r.paused)
     }
 }

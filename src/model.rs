@@ -31,6 +31,8 @@ pub struct Reminder {
     pub checklist: Vec<ChecklistItem>,
     /// Original due time while snoozed, so Done still schedules from it; cleared on Done or a schedule edit.
     pub snoozed_from: Option<DateTime<Local>>,
+    /// Switched off in the list: never pops up until switched back on.
+    pub paused: bool,
 }
 
 impl Default for Reminder {
@@ -46,6 +48,7 @@ impl Default for Reminder {
             repeating: false,
             checklist: Vec::new(),
             snoozed_from: None,
+            paused: false,
         }
     }
 }

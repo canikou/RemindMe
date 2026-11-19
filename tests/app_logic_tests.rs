@@ -118,3 +118,29 @@ fn finish_on_missing_reminder_reports_it() {
     let mut s = ReminderStore::new();
     assert!(!finish_reminder(&mut s, "gone", true, Local::now()));
 }
+
+#[test]
+fn switching_back_on_skips_missed_repeats() {
+    use remindme::edit::set_paused;
+    let t0 = Local::now();
+    // Hourly, off since it was due 2.5 h ago: back on, it waits for the next slot on its grid.
+    let mut s = store_with(relative("a", t0 - Duration::minutes(150), true));
+    assert!(set_paused(&mut s, "a", true, t0));
+    assert!(s.items[0].paused);
+    assert_eq!(
+        s.items[0].next,
+        t0 - Duration::minutes(150),
+        "off keeps the schedule"
+    );
+    assert!(set_paused(&mut s, "a", false, t0));
+    assert!(!s.items[0].paused);
+    assert_eq!(s.items[0].next, t0 + Duration::minutes(30));
+
+    // A one-time reminder that came due while off stays due, so it fires right away.
+    let mut s = store_with(relative("b", t0 - Duration::minutes(5), false));
+    set_paused(&mut s, "b", true, t0);
+    set_paused(&mut s, "b", false, t0);
+    assert_eq!(s.items[0].next, t0 - Duration::minutes(5));
+
+    assert!(!set_paused(&mut s, "missing", true, t0));
+}

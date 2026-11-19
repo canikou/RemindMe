@@ -4,6 +4,7 @@
 
 ### Changes
 
+- Every reminder has an on/off switch in the list. Off, it stays listed (muted, "Off") but never pops up and leaves the countdown board and overlay; switching it off closes its popup if one is open. Back on, a repeating reminder skips the times it missed and waits for its next one; a one-time reminder that came due meanwhile pops up right away.
 - "Music at 2:15PM and every hour" (also ", and" / "then") works: it fires at 2:15 PM, then every hour from there. Without "and" it already did.
 
 ### Fixes

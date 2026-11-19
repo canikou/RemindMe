@@ -115,6 +115,20 @@ pub fn edited_reminder(
     Ok(r)
 }
 
+/// Switches a reminder off or back on. Back on, a repeating reminder skips the times it missed
+/// while off and waits for its next one; a one-time reminder that came due meanwhile fires now.
+/// Returns false if it no longer exists.
+pub fn set_paused(store: &mut ReminderStore, id: &str, paused: bool, now: DateTime<Local>) -> bool {
+    let Some(r) = store.items.iter_mut().find(|r| r.id == id) else {
+        return false;
+    };
+    r.paused = paused;
+    if !paused && r.repeating && r.next <= now {
+        sched::reschedule_after_acknowledge(r, now);
+    }
+    true
+}
+
 /// Done (`done`) or Snooze on the reminder a popup showed. Returns false if it no longer exists.
 pub fn finish_reminder(
     store: &mut ReminderStore,

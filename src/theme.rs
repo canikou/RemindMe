@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! The departures-board palette from DESIGN.md and the widget styles built on it.
 
-use iced::widget::{button, checkbox, container, scrollable, text_editor, text_input};
+use iced::widget::{button, checkbox, container, scrollable, text_editor, text_input, toggler};
 use iced::{Background, Border, Color, Font, Shadow, Theme, color, font};
 
 #[derive(Clone, Copy, Debug)]
@@ -291,5 +291,33 @@ pub fn scroll_style(p: Palette) -> impl Fn(&Theme, scrollable::Status) -> scroll
         s.horizontal_rail = rail;
         s.container = container::Style::default();
         s
+    }
+}
+
+/// The on/off switch on each reminder row: primary when on, a quiet outline when off.
+pub fn toggler_style(p: Palette) -> impl Fn(&Theme, toggler::Status) -> toggler::Style {
+    move |_, status| {
+        let (on, hovered) = match status {
+            toggler::Status::Active { is_toggled } => (is_toggled, false),
+            toggler::Status::Hovered { is_toggled } => (is_toggled, true),
+            toggler::Status::Disabled { is_toggled } => (is_toggled, false),
+        };
+        toggler::Style {
+            background: Background::Color(if on { p.primary } else { p.surface_alt }),
+            background_border_width: 1.0,
+            background_border_color: if hovered {
+                p.focus
+            } else if on {
+                p.primary
+            } else {
+                p.border
+            },
+            foreground: Background::Color(if on { p.primary_text } else { p.muted }),
+            foreground_border_width: 0.0,
+            foreground_border_color: Color::TRANSPARENT,
+            text_color: None,
+            border_radius: None,
+            padding_ratio: 0.1,
+        }
     }
 }

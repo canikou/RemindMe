@@ -322,3 +322,31 @@ fn versions_compare_numerically_and_odd_tags_are_errors() {
         assert!(err.contains("Unrecognized version tag"), "{tag}: {err}");
     }
 }
+
+#[test]
+fn paused_round_trips_and_sorts_after_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reminders.json");
+    let mut store = ReminderStore::with_paths(&path, None);
+    store
+        .import_share_string(
+            &json!({"reminders": [reminder_json("", "Soon"), reminder_json("", "Later")]})
+                .to_string(),
+        )
+        .unwrap();
+    store.save().unwrap();
+    assert!(!std::fs::read_to_string(&path).unwrap().contains("paused"));
+
+    let soon = store.items[0].title.clone();
+    store.items[0].paused = true;
+    store.sort_soonest_first();
+    assert_eq!(store.items.last().unwrap().title, soon, "off goes last");
+    assert!(store.active().all(|r| !r.paused));
+    store.save().unwrap();
+
+    let mut loaded = ReminderStore::with_paths(&path, None);
+    loaded.load().unwrap();
+    let r = loaded.items.iter().find(|r| r.title == soon).unwrap();
+    assert!(r.paused);
+    assert_eq!(loaded.active().count(), 1);
+}
