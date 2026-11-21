@@ -8,7 +8,13 @@
   - Scoop bucket at `bucket/remindme.json` (v2.0.4 zip + sha256, checkver/autoupdate)
   - a Scoop install's update dialog says `scoop update remindme`
   - CHANGELOG Unreleased + README updated. Local check, clippy, fmt and the `scoop` unit test pass. CI on dev covers the Windows build.
-- Asked Terra Alpha to bundle Kyo's Linux data (`~/Documents/RemindMe/`) and autostart lines to Polaris before the wipe. Linux-only reminders exist only there; merge them into Windows' `Documents\RemindMe` (or use RM1: share strings).
+- Linux data is SAVED: `/srv/terra-state/handovers/remindme/` holds:
+  - `remindme-data.tar` (`~/Documents/RemindMe`: 2 active, 5 completed)
+  - `remindme-autostart.txt` (KDE autostart; Hyprland put it top-left on workspace 1)
+  - `SHA256SUMS`, verified OK
+
+  To merge: in the Windows job, get Windows' `Documents\RemindMe\reminders.json`, merge by id, and back up both first.
+- (Done) Asked Terra Alpha to bundle Kyo's Linux data (`~/Documents/RemindMe/`) and autostart lines to Polaris before the wipe. Linux-only reminders exist only there; merge them into Windows' `Documents\RemindMe` (or use RM1: share strings).
 - Scoop caveat: the bucket is read from `main`, and the zip hash is only known after CI. After each release, update `bucket/remindme.json` (version, url, hash) on dev, then promote it with the next main push.
 - winget: not in winget-pkgs. Submitting is a public PR to microsoft/winget-pkgs, so it waits for Kyo's OK.
 - Open for Kyo:
