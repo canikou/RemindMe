@@ -19,6 +19,11 @@
 - winget: not in winget-pkgs. Submitting is a public PR to microsoft/winget-pkgs, so it waits for Kyo's OK.
 - CI on dev 33cb5c3 is green (run 44893161474, Linux + Windows). The test build is staged at `/srv/terra-state/drop/remindme-33cb5c3/` (it still reports 2.0.4).
 - Booked with the Coordinator (11-21): Job "RemindMe Builder | win | light". It backs up Windows data and sends `windows-reminders.json` to the handover dir, runs the installer with the startup task, and checks popup Done. After it: merge the Windows and Linux reminders.json by id, then send the merged file back in a follow-up light job.
+- The job is queued as win job 0f (after Reelspace 0e, LOW priority). It waits for Omega to be linked to the hub and for Kyo's OK at the PC, because it touches his live client and personal data.
+- Decisions for Kyo (made while he was away, 11-21):
+  - Sign-in start is ON by default in the installer. Undo: untick it in setup, or delete the Startup shortcut. In code: add `Flags: unchecked` to the `startup` task in installer/RemindMe.iss.
+  - The repo doubles as a Scoop bucket (`bucket/`) instead of a separate bucket repo. Undo: delete `bucket/`.
+  - Pushed 33cb5c3 to dev (ungated by D11). Nothing on main, no release.
 - Open for Kyo:
   - approve 2.0.5 (bump + main promotion + release)
   - a Windows real-client test via the Coordinator (install, sign-in start, popup Done, merged data)
