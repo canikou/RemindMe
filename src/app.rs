@@ -691,6 +691,13 @@ impl App {
                     Ok(CheckResult::UpToDate) if user => {
                         self.message("Update check", "You're already on the latest version.")
                     }
+                    Ok(CheckResult::Available { tag, .. }) if updater::scoop_managed() => self.message(
+                        "Update available",
+                        format!(
+                            "A new version ({tag}) is available.\nCurrent version: {}.\n\nRemindMe was installed with Scoop. Update it from a terminal:\n\nscoop update remindme",
+                            remindme::APP_VERSION
+                        ),
+                    ),
                     Ok(CheckResult::Available {
                         tag,
                         release_url,

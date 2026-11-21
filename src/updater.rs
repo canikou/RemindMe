@@ -130,6 +130,21 @@ pub fn appimage_path() -> Option<PathBuf> {
         .filter(|p| p.is_file())
 }
 
+/// True when `exe` sits in a Scoop install (`...\scoop\apps\<app>\...`), which Scoop updates itself.
+pub fn is_scoop_path(exe: &str) -> bool {
+    exe.replace('/', "\\")
+        .to_lowercase()
+        .contains("\\scoop\\apps\\")
+}
+
+/// True when this Windows process was installed by Scoop.
+pub fn scoop_managed() -> bool {
+    cfg!(windows)
+        && std::env::current_exe()
+            .map(|p| is_scoop_path(&p.to_string_lossy()))
+            .unwrap_or(false)
+}
+
 /// Starts the new version. The caller quits on success.
 pub fn install(downloaded: &Path) -> Result<(), String> {
     #[cfg(windows)]
@@ -189,5 +204,22 @@ fn record_check_now() {
             .unwrap_or_else(|| serde_json::json!({}));
         settings["last_update_check_utc"] = chrono::Utc::now().timestamp().into();
         let _ = std::fs::write(p, settings.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_scoop_path;
+
+    #[test]
+    fn scoop_paths_are_detected() {
+        assert!(is_scoop_path(
+            r"C:\Users\kyo\scoop\apps\remindme\current\RemindMe.exe"
+        ));
+        assert!(is_scoop_path("D:/Scoop/apps/remindme/2.0.5/RemindMe.exe"));
+        assert!(!is_scoop_path(r"C:\Program Files\RemindMe\RemindMe.exe"));
+        assert!(!is_scoop_path(
+            r"C:\Users\kyo\Downloads\RemindMe-2.0.4-windows-portable\RemindMe.exe"
+        ));
     }
 }

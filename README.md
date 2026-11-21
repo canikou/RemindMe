@@ -62,7 +62,8 @@ This project is an independent work and is not affiliated with or endorsed by th
 
 ## Install
 
-- **Windows:** download `RemindMe-<version>-setup.exe` (or the portable `.zip`) from [Releases](https://github.com/canikou/RemindMe/releases). Upgrading from 1.x keeps your reminders.
+- **Windows:** download `RemindMe-<version>-setup.exe` (or the portable `.zip`) from [Releases](https://github.com/canikou/RemindMe/releases). Upgrading from 1.x keeps your reminders. The installer can start RemindMe when you sign in (on by default).
+- **Windows with [Scoop](https://scoop.sh):** `scoop bucket add remindme https://github.com/canikou/RemindMe` then `scoop install remindme/remindme`; update with `scoop update remindme`. To start it at sign-in, put a shortcut to `~\scoop\apps\remindme\current\RemindMe.exe` in `shell:startup`.
 - **Linux:** download `RemindMe-<version>-x86_64.AppImage`, make it executable (`chmod +x`), and run it. On first run it adds itself to your app menu. Updates replace the AppImage in place.
 
 Linux notes:

@@ -1,0 +1,27 @@
+{
+    "version": "2.0.4",
+    "description": "Natural-language desktop reminders",
+    "homepage": "https://github.com/canikou/RemindMe",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/canikou/RemindMe/releases/download/v2.0.4/RemindMe-2.0.4-windows-portable.zip",
+            "hash": "1cd73927d598e3c298891006dd84ffd39af050bc31700883d76e51c5729ab3e9"
+        }
+    },
+    "bin": "RemindMe.exe",
+    "shortcuts": [
+        [
+            "RemindMe.exe",
+            "RemindMe"
+        ]
+    ],
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/canikou/RemindMe/releases/download/v$version/RemindMe-$version-windows-portable.zip"
+            }
+        }
+    }
+}

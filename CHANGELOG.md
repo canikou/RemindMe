@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- Windows installer: new "Start RemindMe when I sign in" option (on by default) adds a Startup shortcut; uninstalling removes it.
+- Scoop: the repo is a Scoop bucket (`scoop bucket add remindme https://github.com/canikou/RemindMe`, then `scoop install remindme/remindme`). A Scoop install tells you to run `scoop update remindme` instead of downloading the installer.
+
 ## 2.0.4 - 2026-11-19
 
 ### Changes

@@ -32,6 +32,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
+Name: "startup"; Description: "Start RemindMe when I sign in"; GroupDescription: "Startup:"
 
 [InstallDelete]
 ; 2.0 is a single static exe; remove the Qt runtime that 1.x installed alongside it.
@@ -52,6 +53,7 @@ Source: "{#MySourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdir
 Name: "{group}\RemindMe"; Filename: "{app}\RemindMe.exe"
 Name: "{group}\Uninstall RemindMe"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\RemindMe"; Filename: "{app}\RemindMe.exe"; Tasks: desktopicon
+Name: "{userstartup}\RemindMe"; Filename: "{app}\RemindMe.exe"; Tasks: startup
 
 [Run]
 Filename: "{app}\RemindMe.exe"; Description: "Launch RemindMe"; Flags: nowait postinstall skipifsilent
