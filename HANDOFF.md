@@ -17,6 +17,8 @@
 - (Done) Asked Terra Alpha to bundle Kyo's Linux data (`~/Documents/RemindMe/`) and autostart lines to Polaris before the wipe. Linux-only reminders exist only there; merge them into Windows' `Documents\RemindMe` (or use RM1: share strings).
 - Scoop caveat: the bucket is read from `main`, and the zip hash is only known after CI. After each release, update `bucket/remindme.json` (version, url, hash) on dev, then promote it with the next main push.
 - winget: not in winget-pkgs. Submitting is a public PR to microsoft/winget-pkgs, so it waits for Kyo's OK.
+- CI on dev 33cb5c3 is green (run 44893161474, Linux + Windows). The test build is staged at `/srv/terra-state/drop/remindme-33cb5c3/` (it still reports 2.0.4).
+- Booked with the Coordinator (11-21): Job "RemindMe Builder | win | light". It backs up Windows data and sends `windows-reminders.json` to the handover dir, runs the installer with the startup task, and checks popup Done. After it: merge the Windows and Linux reminders.json by id, then send the merged file back in a follow-up light job.
 - Open for Kyo:
   - approve 2.0.5 (bump + main promotion + release)
   - a Windows real-client test via the Coordinator (install, sign-in start, popup Done, merged data)
