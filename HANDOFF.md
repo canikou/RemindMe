@@ -1,3 +1,27 @@
+# RemindMe handoff: wrap-up for the context clear (2026-11-24)
+
+Resume from here. Read the 11-21 section below too.
+- Branches:
+  - `dev` = `33cb5c3` (pushed; CI 44893161474 green)
+  - `main` = `d19a02b` = v2.0.4, the latest release
+  - Nothing is uncommitted, nothing is running in the background, and no subagents are running.
+- Pushes go only through the broker: `sudo -n /usr/local/sbin/vault-secret run git-push -- remindme <ref> <old>..<new> --bundle <private file>`.
+  - Make the bundle from a ref name (`git branch -f tmp <sha>`) and keep it under ~/ or .git, never in /tmp.
+  - `dev`/work branches need no tap. `main`, `v*` tags and releases are gated.
+  - On `pending <id>` (rc 75), run a background wait on `vault-secret status <id>`, then re-run the identical call.
+- Approvals: none open of mine. Test card d0597e12 (pm-test/remindme-gate) was approved by mistake and deleted by PM. Never re-run it.
+- PR #1 (Dependabot: actions/checkout 4 -> 6, head f847440, base main, open since 2026-02-19): checks green. Nobody has reviewed it. It waits for Kyo. Recommendation:
+  - retarget it to dev, or cherry-pick it into dev
+  - it ships with the next main promotion
+  - check that CI still passes on v6
+  - do not merge into main directly
+- Terra win job 0f: QUEUED (Kyo's OK is standing). Test build at `/srv/terra-state/drop/remindme-33cb5c3/`. Results come back to me. Then:
+  - merge `/srv/terra-state/handovers/remindme/windows-reminders.json` with `remindme-data.tar` by id
+  - send the merged file back with a light job
+- Next for Kyo: approve 2.0.5 (bump on dev, main card, release), and a yes/no on the winget-pkgs PR.
+
+---
+
 # RemindMe handoff (Polaris, 2026-11-21)
 
 ## Current: dev = `33cb5c3`, Windows-only prep (Terra drops CachyOS)
